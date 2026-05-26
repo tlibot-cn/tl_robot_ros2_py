@@ -48,11 +48,29 @@ def _is_success(res) -> bool:
         return res
     if res is None:
         return True
+    if isinstance(res, int):
+        return res == 0
+    return bool(res)
+
+
+def _check_host_reachable(host: str, timeout: float = 1.0) -> bool:
+    """Only check whether the host IP is reachable (ICMP/TCP level).
+
+    Unlike _check_port_open (which connected to the actual port and then
+    closed it, causing the robot controller to refuse the subsequent
+    native connect_robot call), this function only verifies that the host
+    exists on the network.  The actual port connection is left entirely
+    to connect_robot().
+    """
+    import subprocess as _sp
     try:
-        ival = int(res)
-        return ival == 0
+        ret = _sp.run(
+            ['ping', '-c', '1', '-W', str(int(timeout)), host],
+            capture_output=True, timeout=timeout + 1
+        )
+        return ret.returncode == 0
     except Exception:
-        return bool(res)
+        return False
 
 
 class TLArmNode(Node):
@@ -274,21 +292,10 @@ class TLArmNode(Node):
         self.is_connected_ = False
         self.is_powered_ = False
 
-        self.fd_aux = nrc_interface.connect_robot(self.arm_ip_, "7000")
-        # 回调状态变量
+        # # 测试用后续待定
         self.msg_received = False
         self.latest_robot_state = ""
 
-        # 必须保存callback引用（非常关键）
-        self._robot_state_callback = self.on_robot_state_message
-
-        # 注册SDK回调
-        ret_cb = nrc_interface.robot_state_callback(self.fd_aux, self._robot_state_callback)
-        self.get_logger().info(f"robot_state_callback ret = {ret_cb}")
-        self.get_logger().info(f"fd_aux = {self.fd_aux}")
-
-        # 测试用后续待定
-        self.msg_received = False
         self.msg_id = -1
         self.msg = ""
 
@@ -330,6 +337,7 @@ class TLArmNode(Node):
         # Mirror the C++ connect() behavior: connect both primary and auxiliary ports,
         # require positive socket fds, register callbacks, and mark connected.
         self.get_logger().info('connect() called')
+        self.get_logger().info(f'nrc_interface file = {nrc_interface.__file__}')
 
         if self.is_connected_:
             self.get_logger().info('[Connect]: arm already connected')
@@ -339,12 +347,19 @@ class TLArmNode(Node):
             ip = self.get_parameter('arm_ip').get_parameter_value().string_value
             port = self.get_parameter('arm_port').get_parameter_value().string_value
             port_aux = self.get_parameter('arm_port_aux').get_parameter_value().string_value
+            self.get_logger().info(f'ip={repr(ip)}, port={repr(port)}, port_aux={repr(port_aux)}')
         except Exception:
             ip, port, port_aux = '192.168.1.13', '6001', '7000'
+
+        # Check if the port is reachable
+        if not _check_host_reachable(ip, timeout=1.0):
+            self.get_logger().warning(f'Host {ip} is not reachable (ping failed)')
+            return False
 
         try:
             fd = None
             fd_aux = None
+            self.get_logger().info('Attempting native connect_robot calls')
             if nrc_interface is not None and hasattr(nrc_interface, 'connect_robot'):
                 try:
                     fd = nrc_interface.connect_robot(ip, port)
@@ -388,6 +403,22 @@ class TLArmNode(Node):
             self.fd = fd
             self.fd_aux = fd_aux
             self.is_connected_ = True
+
+            # 注册机器人状态回调（必须connect成功后）
+            try:
+                nrc_interface.robot_state_callback(
+                    self.fd_aux,
+                    self._robot_state_callback
+                )
+
+                self.get_logger().info(
+                    f'robot_state_callback registered, fd_aux={self.fd_aux}'
+                )
+
+            except Exception as e:
+                self.get_logger().error(
+                    f'robot_state_callback failed: {e}'
+                )
 
             # register receive callbacks if available
             try:
@@ -443,6 +474,7 @@ class TLArmNode(Node):
                 self.power_on()
             except Exception:
                 pass
+
     def power_on(self) -> bool:
         """Power on sequence mirroring C++ TL_Arm::power_on().
 

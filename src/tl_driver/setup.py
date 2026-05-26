@@ -1,8 +1,19 @@
 from setuptools import setup
 from glob import glob
 import os
+import shutil
 
 package_name = 'tl_driver'
+
+# 将 x86 版 NRC 库复制到 src/tl_driver/lib/ 供 package_data 打包
+pkg_lib_dir = os.path.join('src', 'tl_driver', 'lib')
+os.makedirs(pkg_lib_dir, exist_ok=True)
+
+for f in ('_nrc_host.so', 'nrc_interface.py'):
+    src = os.path.join('lib', 'x86', f)
+    dst = os.path.join(pkg_lib_dir, f)
+    if os.path.exists(src):
+        shutil.copy2(src, dst)
 
 # data files to install so that ros2 can find launch/config and the swig lib
 data_files = [
@@ -15,10 +26,6 @@ for p in glob('launch/*.py'):
     data_files.append(('share/' + package_name + '/launch', [p]))
 for p in glob('config/*'):
     data_files.append(('share/' + package_name + '/config', [p]))
-
-# include the native shared object if present in lib/
-if os.path.exists('lib/_nrc_host.so'):
-    data_files.append(('share/' + package_name + '/lib', ['lib/_nrc_host.so']))
 
 setup(
     name=package_name,
@@ -34,6 +41,7 @@ setup(
     maintainer_email='your_email@example.com',
     description='ROS2 driver for TL series robotic arm (Python)',
     license='Apache-2.0',
+    # cmdclass={'build_py': build_py}, 
     entry_points={
         'console_scripts': [
             'tl_driver_node = tl_driver.tl_driver_node:main',
