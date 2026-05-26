@@ -178,6 +178,7 @@ class TLArmNode(Node):
             self.create_service(srvs.SetUserCoord, '/tl_driver/set_user_coord', self.handle_set_user_coord_service)
             self.create_service(srvs.SetAxisZeroPos, '/tl_driver/set_axis_zero_pos', self.handle_set_axis_zero_pos_service)
             self.create_service(srvs.SetCurrentCoord, '/tl_driver/set_current_coord', self.handle_set_current_coord_service)
+            self.create_service(srvs.GetCurrentCoord, '/tl_driver/get_current_coord', self.handle_get_current_coord_service)
             self.create_service(srvs.GetCoordNum, '/tl_driver/get_coord_num', self.handle_get_coord_num_service)
             self.create_service(srvs.ToolHandCalib, '/tl_driver/tool_hand_calib', self.handle_tool_hand_calib_service)
 
@@ -485,93 +486,39 @@ class TLArmNode(Node):
             self.get_logger().warning('power_on: nrc_interface or fd missing')
             return False
 
-        ret, state = nrc_interface.get_servo_state(self.fd, -1)
-        self.get_logger().info(f"get_servo_state ret={ret}, state={state}")
-        if ret != 0:
-            self.get_logger().error(f"get_servo_state failed ret={ret}")
-            return False
         try:
-            if state == 0:
-                self.get_logger().info("before set_servo_state")
-                ret = nrc_interface.set_servo_state(self.fd, 1)
-                self.get_logger().info(f"after set_servo_state ret={ret}")
+            final_state = nrc_interface.power_on(self.fd)
 
-                self.get_logger().info("before set_servo_poweron")
-                ret = nrc_interface.set_servo_poweron(self.fd)
-                self.get_logger().info(f"after set_servo_poweron ret={ret}")
-            elif state == 1:
-                self.get_logger().info("before set_servo_poweron")
-                ret = nrc_interface.set_servo_poweron(self.fd)
-                self.get_logger().info(f"after set_servo_poweron ret={ret}")
-            elif state == 2:
-                self.get_logger().info("before clear_error")
-                ret = nrc_interface.clear_error(self.fd)
-                self.get_logger().info(f"after clear_error ret={ret}")
-
-                self.get_logger().info("before set_servo_state")
-                ret = nrc_interface.set_servo_state(self.fd, 1)
-                self.get_logger().info(f"after set_servo_state ret={ret}")
-
-                self.get_logger().info("before set_servo_poweron")
-                ret = nrc_interface.set_servo_poweron(self.fd)
-                self.get_logger().info(f"after set_servo_poweron ret={ret}")
-            elif state == 3:
-                self.get_logger().info('[PowerOn]: already power on')
+            # 状态 3 = 运行中（上电成功）
+            if final_state == 3:
                 self.is_powered_ = True
+                self.get_logger().info(f"[PowerOn]: 上电成功，当前伺服状态 = {final_state}")
                 return True
+            else:
+                self.get_logger().error(f"[PowerOn]: 上电失败，当前伺服状态 = {final_state}")
+                return False
+
         except Exception as e:
             self.get_logger().warning(f'power_on sequence failed: {e}')
-
-        ret, state = nrc_interface.get_servo_state(self.fd, -1) 
-        if ret == 0 and state == 3:
-            self.is_powered_ = True
-            self.get_logger().info(f"[PowerOn]: successfully power on, " f"servo_state = {state}")
-            return True
-
-        self.get_logger().info(f"[PowerOn]: failed to power on, " f"servo_state = {state}")
-        return False
+            return False
 
     def power_off(self) -> bool:
-        """Power off sequence mirroring C++ TL_Arm::power_off()."""
+        """Power off sequence."""
         self.get_logger().info('power_off() called')
         if nrc_interface is None or self.fd is None:
             self.get_logger().warning('power_off: nrc_interface or fd missing')
             return False
 
-        def _read_servo_state():
-            try:
-                r = nrc_interface.get_servo_state(self.fd, 0)
-            except Exception as e:
-                self.get_logger().warning(f'get_servo_state call failed: {e}')
-                return None
-            if isinstance(r, (list, tuple)) and len(r) >= 2:
-                try:
-                    return int(r[1])
-                except Exception:
-                    return None
-            try:
-                return int(r)
-            except Exception:
-                return None
-
-        state = _read_servo_state()
         try:
-            if state == 3:
-                if hasattr(nrc_interface, 'set_servo_poweroff'):
-                    nrc_interface.set_servo_poweroff(self.fd)
-                    new_state = _read_servo_state()
-                    self.get_logger().info(f'[PowerOff]: servo_state after off = {new_state}')
-                    self.is_powered_ = False
-                    return True
-            elif state == 1:
-                self.get_logger().info('[PowerOff]: already power off')
-                self.is_powered_ = False
-                return True
-        except Exception as e:
-            self.get_logger().warning(f'power_off sequence failed: {e}')
+            # 新版调用
+            final_state = nrc_interface.power_off(self.fd)
+            self.is_powered_ = False
+            self.get_logger().info(f"[PowerOff]: 下电完成，当前伺服状态 = {final_state}")
+            return True
 
-        self.get_logger().info(f'[PowerOff]: fail to power off, servo_state = {state}')
-        return False
+        except Exception as e:
+            self.get_logger().warning(f'power_off failed: {e}')
+            return False
 
     # service handlers
     def disconnect(self) -> bool:
@@ -1239,42 +1186,60 @@ class TLArmNode(Node):
             self.get_logger().error(f"handle_job_insert_movec_topic failed: {e}")
 
     def handle_get_all_job_filename_service(self, request, response):
+        import ctypes
 
         if self.fd is None:
             response.success = False
             response.message = "Arm is not connected"
             return response
 
-        robots_file = nrc_interface.VectorVectorString()
+        try:
+            # ===================== 适配 C 语言接口 ======================
+            MAX_FILES = 64          # 最大支持文件数
+            FILENAME_LEN = 64       # 每个文件名长度固定 64 字节
 
-        ret = nrc_interface.job_get_all_jobfile_name(self.fd, robots_file)
+            # 创建 C 语言二维数组：uint8_t buffer[MAX_FILES][64]
+            buffer = (ctypes.c_uint8 * FILENAME_LEN * MAX_FILES)()
 
-        # self.get_logger().info(f"DEBUG: job_get_all_jobfile_name return ret = {ret}")
-        # self.get_logger().info(f"DEBUG: robots_file size = {robots_file.size()}")
-        # self.get_logger().info(f"DEBUG: robots_file content = {robots_file}")
+            # 调用 C 接口：maxFileNum 传 0 表示获取全部
+            ret = nrc_interface.job_get_all_jobfile_name(
+                self.fd,
+                robotNum=1,         # 机器号默认 1
+                buffer=buffer,
+                maxFileNum=0        # 0 = 获取所有作业文件
+            )
 
-        response.success = (ret == 0)  # 0 = SUCCESS
-        if response.success:
+            # ==========================================================
+
+            # 结果判断
+            response.success = (ret == 0)
+            if not response.success:
+                response.message = f"Failed to get job files, ret={ret}"
+                return response
+
             response.message = "Get all job filename successfully"
-        else:
-            response.message = "Failed to get all job filename"
 
-        tmp_list = []
-
-        # 遍历 vector<vector<string>>
-        for i in range(robots_file.size()):
-
+            # 解析文件名
+            tmp_list = []
             job_file_msg = msgs.JobFileName()
 
-            # 遍历 vector<string>
-            for j in range(len(robots_file[i])):
-                filename = robots_file[i][j]
-                self.get_logger().info(f"robots_file[{i}][{j}] = {filename}")
+            for i in range(MAX_FILES):
+                # 取出第 i 个文件名
+                name_bytes = bytes(buffer[i]).split(b'\x00')[0]  # 去掉 \0 截断
+                if not name_bytes:
+                    continue
+
+                filename = name_bytes.decode("utf-8", errors="ignore")
+                self.get_logger().info(f"job file {i}: {filename}")
                 job_file_msg.file_name.append(filename)
 
             tmp_list.append(job_file_msg)
+            response.robots_file = tmp_list
 
-        response.robots_file = tmp_list
+        except Exception as e:
+            response.success = False
+            response.message = f"Exception: {str(e)}"
+            self.get_logger().error(f"get job files error: {str(e)}")
 
         return response
 
@@ -1367,7 +1332,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = nrc_interface.close_servoJ(self.fd)
+            ret = nrc_interface.close_servoJ(self.fd_aux)
             response.success = (ret == 0)
             if response.success:
                 response.message = "ServoJ close successfully"
@@ -1429,17 +1394,22 @@ class TLArmNode(Node):
             return response
 
         try:
+            pos_name = request.pos_name
             pos_info = list(request.pos_info)
-            self.get_logger().info(f"set_global_position pos_name={request.pos_name}, " f"pos_info={pos_info}")
+            
+            self.get_logger().info(f"set_global_position pos_name={pos_name}, pos_info={pos_info}")
 
-            vec = nrc_interface.VectorDouble()
-            for v in pos_info:
-                vec.append(float(v))
+            # ===================== 调用新版函数 ======================
+            ret = nrc_interface.set_global_position(
+                self.fd,
+                posName=pos_name,
+                posInfo=pos_info  # 直接传 Python 列表即可
+            )
 
-            ret = nrc_interface.set_global_position(self.fd, request.pos_name, vec)
+            # ==========================================================
             self.get_logger().info(f"set_global_position ret={ret}")
+            
             response.success = (ret == 0)
-
             if response.success:
                 response.message = "Set global pos successfully"
             else:
@@ -1448,7 +1418,6 @@ class TLArmNode(Node):
         except Exception as e:
             response.success = False
             response.message = str(e)
-
             self.get_logger().error(f'handle_set_global_pos_service failed: {e}')
 
         return response
@@ -1475,18 +1444,17 @@ class TLArmNode(Node):
             return response
         
         try:
-            # vector<double>
-            pos = nrc_interface.VectorDouble()
-            ret = nrc_interface.get_global_position(self.fd,request.pos_name,pos)
-            # self.get_logger().info(f"get_global_position ret={ret}")
-            # self.get_logger().info(f"pos len={len(pos)}")
-            # self.get_logger().info(f"pos vals={[pos[i] for i in range(len(pos))]}")
-            response.success = (ret == 0)
-            if response.success:
-                response.message = ("Get global pos successfully")
-                response.pos = [float(pos[i])for i in range(len(pos))]
+            # 调用新版 get_global_position 函数（直接返回 list）
+            pos_list = nrc_interface.get_global_position(self.fd, request.pos_name)
+
+            # 判断是否成功（返回的列表长度正确即为成功）
+            if len(pos_list) == 14:
+                response.success = True
+                response.message = "Get global pos successfully"
+                response.pos = [float(val) for val in pos_list]
             else:
-                response.message = ("Failed to get global pos")
+                response.success = False
+                response.message = "Failed to get global pos"
                 response.pos = []
 
         except Exception as e:
@@ -1511,23 +1479,26 @@ class TLArmNode(Node):
         ok = True
         target_pos = []
         try:
-            if nrc_interface is not None and hasattr(nrc_interface, 'coord_transform'):
-                try:
-                    buf = []
-                    if self._valid_fd():
-                        res = nrc_interface.coord_transform(self.fd, origin, target, form, origin_pos, reference, buf)
-                    else:
-                        res = nrc_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
-                    ok = _is_success(res)
-                    target_pos = list(buf)
-                except TypeError:
-                    buf = []
-                    res = nrc_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
-                    ok = _is_success(res)
-                    target_pos = list(buf)
+            # 新版函数：origin_to_target_coord
+            target_pos = []
+            if self._valid_fd():
+                # 调用新版坐标转换函数
+                target_pos = nrc_interface.origin_to_target_coord(
+                    self.fd,
+                    originCoord=origin,    # 原坐标系
+                    originPos=origin_pos,  # 原坐标位置 (长度7)
+                    targetCoord=target     # 目标坐标系
+                )
+            
+            # 判断是否成功
+            ok = len(target_pos) == 7
+            self.get_logger().info(f"coord_transform origin={origin}, target={target}, " f"origin_pos={origin_pos}, target_pos={target_pos}, ok={ok}")
+
         except Exception as e:
             self.get_logger().error(f'coord_transform failed: {e}')
             ok = False
+            target_pos = []
+
         response.success = bool(ok)
         response.message = 'ok' if ok else 'failed'
         response.target_pos = list(target_pos)
@@ -1569,7 +1540,7 @@ class TLArmNode(Node):
         return response
 
     def handle_get_dh_param_service(self, request, response):
-        dh_param = nrc_interface.RobotDHParam()
+        dh_param = nrc_interface.CRobotDHParam()
         ret = nrc_interface.get_robot_dh_param(self.fd, dh_param)
 
         response.success = (ret == 0)
@@ -1580,68 +1551,70 @@ class TLArmNode(Node):
 
         param_msg = msgs.RobotDHParam()
 
-        param_msg.l1 = dh_param.L1
-        param_msg.l2 = dh_param.L2
-        param_msg.l3 = dh_param.L3
-        param_msg.l4 = dh_param.L4
-        param_msg.l5 = dh_param.L5
-        param_msg.l6 = dh_param.L6
-        param_msg.l7 = dh_param.L7
-        param_msg.l8 = dh_param.L8
-        param_msg.l9 = dh_param.L9
-        param_msg.l10 = dh_param.L10
-        param_msg.l11 = dh_param.L11
-        param_msg.l12 = dh_param.L12
-        param_msg.l13 = dh_param.L13
-        param_msg.l14 = dh_param.L14
-        param_msg.l15 = dh_param.L15
-        param_msg.l16 = dh_param.L16
-        param_msg.l17 = dh_param.L17
-        param_msg.l18 = dh_param.L18
-        param_msg.l19 = dh_param.L19
-        param_msg.l20 = dh_param.L20
+        param_msg.l1 = float(dh_param.L1)
+        param_msg.l2 = float(dh_param.L2)
+        param_msg.l3 = float(dh_param.L3)
+        param_msg.l4 = float(dh_param.L4)
+        param_msg.l5 = float(dh_param.L5)
+        param_msg.l6 = float(dh_param.L6)
+        param_msg.l7 = float(dh_param.L7)
+        param_msg.l8 = float(dh_param.L8)
+        param_msg.l9 = float(dh_param.L9)
+        param_msg.l10 = float(dh_param.L10)
+        param_msg.l11 = float(dh_param.L11)
+        param_msg.l12 = float(dh_param.L12)
+        param_msg.l13 = float(dh_param.L13)
+        param_msg.l14 = float(dh_param.L14)
+        param_msg.l15 = float(dh_param.L15)
+        param_msg.l16 = float(dh_param.L16)
+        param_msg.l17 = float(dh_param.L17)
+        param_msg.l18 = float(dh_param.L18)
+        param_msg.l19 = float(dh_param.L19)
+        param_msg.l20 = float(dh_param.L20)
 
         # 耦合系数
-        param_msg.couple_coe_1_2 = dh_param.Couple_Coe_1_2
-        param_msg.couple_coe_2_3 = dh_param.Couple_Coe_2_3
-        param_msg.couple_coe_3_2 = dh_param.Couple_Coe_3_2
-        param_msg.couple_coe_3_4 = dh_param.Couple_Coe_3_4
-        param_msg.couple_coe_4_5 = dh_param.Couple_Coe_4_5
-        param_msg.couple_coe_4_6 = dh_param.Couple_Coe_4_6
-        param_msg.couple_coe_5_6 = dh_param.Couple_Coe_5_6
+        param_msg.couple_coe_1_2 = float(dh_param.Couple_Coe_1_2)
+        param_msg.couple_coe_2_3 = float(dh_param.Couple_Coe_2_3)
+        param_msg.couple_coe_3_2 = float(dh_param.Couple_Coe_3_2)
+        param_msg.couple_coe_3_4 = float(dh_param.Couple_Coe_3_4)
+        param_msg.couple_coe_4_5 = float(dh_param.Couple_Coe_4_5)
+        param_msg.couple_coe_4_6 = float(dh_param.Couple_Coe_4_6)
+        param_msg.couple_coe_5_6 = float(dh_param.Couple_Coe_5_6)
 
-        # 动态限制
-        param_msg.dynamic_limit_max = dh_param.dynamicLimit_max
-        param_msg.dynamic_limit_min = dh_param.dynamicLimit_min
+        # 动态限制 
+        param_msg.dynamic_limit_max = float(dh_param.dynamicLimit_max)
+        param_msg.dynamic_limit_min = float(dh_param.dynamicLimit_min)
 
         # 螺距/导程
-        param_msg.pitch = dh_param.pitch
-        param_msg.sliding_lead_value = dh_param.sliding_lead_value
-        param_msg.uplift_lead_value = dh_param.uplift_lead_value
-        param_msg.spray_distance = dh_param.spray_distance
+        param_msg.pitch = float(dh_param.pitch)
+        param_msg.sliding_lead_value = float(dh_param.sliding_lead_value)
+        param_msg.uplift_lead_value = float(dh_param.uplift_lead_value)
+        param_msg.spray_distance = float(dh_param.spray_distance)
 
         # 轴方向
-        param_msg.three_axis_direction = dh_param.threeAxisDirection
-        param_msg.five_axis_direction = dh_param.fiveAxisDirection
+        param_msg.three_axis_direction = float(dh_param.threeAxisDirection)
+        param_msg.five_axis_direction = float(dh_param.fiveAxisDirection)
 
         # 转换比
-        param_msg.two_axis_convertion_ratio = dh_param.twoAxisConversionRatio
-        param_msg.three_axis_convertion_ratio = dh_param.threeAxisConversionRatio
-        param_msg.amplification_ratio = dh_param.amplificationRatio
+        param_msg.two_axis_convertion_ratio = float(dh_param.twoAxisConversionRatio)
+        param_msg.three_axis_convertion_ratio = float(dh_param.threeAxisConversionRatio)
+        param_msg.amplification_ratio = float(dh_param.amplificationRatio)
 
-        param_msg.convertion_ratio_x = dh_param.conversionratio_x
-        param_msg.convertion_ratio_y = dh_param.conversionratio_y
-        param_msg.convertion_ratio_z = dh_param.conversionratio_z
+        param_msg.convertion_ratio_x = float(dh_param.conversionratio_x)
+        param_msg.convertion_ratio_y = float(dh_param.conversionratio_y)
+        param_msg.convertion_ratio_z = float(dh_param.conversionratio_z)
 
-        param_msg.convertion_ratio_j1 = dh_param.conversionratio_J1
-        param_msg.convertion_ratio_j2 = dh_param.conversionratio_J2
-        param_msg.convertion_ratio_j3 = dh_param.conversionratio_J3
+        param_msg.convertion_ratio_j1 = float(dh_param.conversionratio_J1)
+        param_msg.convertion_ratio_j2 = float(dh_param.conversionratio_J2)
+        param_msg.convertion_ratio_j3 = float(dh_param.conversionratio_J3)
 
-        # 安装方向
+        # 安装方向 int 类型不用改
         param_msg.upside_down = dh_param.upsideDown
 
         # 汉语参数 PC / SP / TL
-        param_msg.pc = dh_param.hanyu.PC
+        param_msg.pc = float(dh_param.hanyu)
+        param_msg.sp = []
+        param_msg.tl = []
 
         try:
             param_msg.sp = [
@@ -1853,10 +1826,7 @@ class TLArmNode(Node):
 
         try:
             # 设置连续运动状态
-            ret = nrc_interface.queue_motion_set_status(
-                self.fd,
-                request.status
-            )
+            ret = nrc_interface.queue_motion_set_status(self.fd, request.status)
 
             response.success = (ret == 0)
             if response.success:
@@ -1890,58 +1860,30 @@ class TLArmNode(Node):
             return response
 
         try:
-            # ========= 1. 构造 MoveCmd =========
-            cmd = nrc_interface.MoveCmd()
+            cmd = request.cmd
+            pos_list = list(cmd.target_pos_value)  # 目标位置
 
-            cmd.targetPosType = int(nrc_interface.PosType_data)
-            cmd.targetPosName = ""
-
-            cmd.coord = request.cmd.coord
-            cmd.velocity = request.cmd.velocity
-            cmd.velocitySync = request.cmd.velocity_sync
-            cmd.acc = request.cmd.acc
-            cmd.dec = request.cmd.dec
-            cmd.pl = request.cmd.pl
-            cmd.time = request.cmd.time
-            cmd.toolNum = request.cmd.tool_num
-            cmd.userNum = request.cmd.user_num
-            cmd.posidtype = request.cmd.posidtype
-            cmd.configuration = request.cmd.configuration
-            cmd.spin = request.cmd.spin
-            cmd.parasync = request.cmd.para_sync
-
-            # vector<double>
-            cmd.targetPosValue = nrc_interface.VectorDouble()
-            for v in request.cmd.target_pos_value:
-                cmd.targetPosValue.append(float(v))
-
-            # ========= 2. push queue =========
-            ret = nrc_interface.queue_motion_push_back_moveJ(self.fd, cmd)
-            self.get_logger().info(f"queue_push_moveJ ret={ret}")
-            if ret != 0:
-                response.success = False
-                response.message = "Failed to push back queue motion moveJ"
-                return response
-
-            # ========= 3. send to controller =========
-            ret = nrc_interface.queue_motion_send_to_controller(self.fd, request.is_continue)
-
-            self.get_logger().info(f"queue_send ret={ret}")
-
-            response.success = (ret == 0)
-            response.message = (
-                "Queue motion moveJ execute successfully"
-                if response.success
-                else "Failed to execute queue motion moveJ"
+            # ===================== 调用新版全自动队列函数 ======================
+            nrc_interface.queue_moveJ(
+                self.fd,
+                coord=cmd.coord,
+                vel=cmd.velocity,
+                acc=cmd.acc,
+                dec=cmd.dec,
+                pl=cmd.pl,
+                pos_list=pos_list,
+                wait_time=10.0
             )
 
-            return response
+            response.success = True
+            response.message = "Queue motion moveJ execute successfully"
 
         except Exception as e:
             self.get_logger().error(f"handle_queue_motion_movej_service failed: {e}")
             response.success = False
             response.message = str(e)
-            return response
+
+        return response
 
     def handle_queue_motion_stop_service(self, request, response):
         if self.fd is None or self.fd <= 0:
@@ -2702,6 +2644,26 @@ class TLArmNode(Node):
             self.get_logger().error(f'handle_set_current_coord_service failed: {e}')
             response.success = False
             response.message = str(e)
+
+        return response
+    
+    def handle_get_current_coord_service(self, request, response):
+        if not self.is_connected_:
+            response.success = False
+            response.message = "Arm is not connected"
+            return response
+
+        try:
+            coord = nrc_interface.get_current_coord(self.fd)
+
+            response.success = True
+            response.message = "Get current coordinate successfully"
+            response.coord = coord
+
+        except Exception as e:
+            # 失败
+            response.success = False
+            response.message = f"Failed to get current coordinate: {str(e)}"
 
         return response
 
