@@ -5,15 +5,17 @@ import shutil
 
 package_name = 'tl_driver'
 
-# 将 x86 版 TL 库复制到 src/tl_driver/lib/ 供 package_data 打包
+# 将 ARM 版 NRC 库复制到 src/tl_driver/lib/ 供 package_data 打包
 pkg_lib_dir = os.path.join('src', 'tl_driver', 'lib')
 os.makedirs(pkg_lib_dir, exist_ok=True)
 
-for f in ('_tl_host.so', 'tl_interface.py'):
-    src = os.path.join('lib', 'x86', f)
-    dst = os.path.join(pkg_lib_dir, f)
-    if os.path.exists(src):
-        shutil.copy2(src, dst)
+arm_lib_dir = os.path.join('lib', 'arm')
+if os.path.exists(arm_lib_dir):
+    for f in os.listdir(arm_lib_dir):
+        src = os.path.join(arm_lib_dir, f)
+        dst = os.path.join(pkg_lib_dir, f)
+        if os.path.isfile(src):
+            shutil.copy2(src, dst)
 
 # data files to install so that ros2 can find launch/config and the swig lib
 data_files = [
@@ -32,7 +34,7 @@ setup(
     version='1.0.0',
     packages=['tl_driver', 'tl_driver.lib'],
     package_dir={'': 'src'},
-    package_data={'tl_driver.lib': ['_tl_host.*', 'tl_interface.py']},
+    package_data={'tl_driver.lib': ['_nrc_host.*', 'nrc_interface.py', 'libnrc_host.*', 'libmath_wrapper.*', 'libmodbus_wrapper.*', 'libservoJ_wrapper.*']},
     data_files=data_files,
     include_package_data=True,
     zip_safe=False,

@@ -13,31 +13,31 @@ import math
 import threading
 
 try:
-    from tl_driver.lib import tl_interface
+    from tl_driver.lib import nrc_interface
 except Exception:
     # Fallback: try to load the SWIG wrapper from the package's sibling lib/
-    # directory (useful during development where _tl_host.so and
-    # tl_interface.py live in src/tl_driver/lib)
-    tl_interface = None
+    # directory (useful during development where _nrc_host.so and
+    # nrc_interface.py live in src/tl_driver/lib)
+    nrc_interface = None
     try:
         import sys
         import importlib.util
         lib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'lib'))
-        tl_path = os.path.join(lib_dir, 'tl_interface.py')
-        if os.path.exists(tl_path):
-            # Ensure the native module _tl_host can be imported from lib_dir
+        nrc_path = os.path.join(lib_dir, 'nrc_interface.py')
+        if os.path.exists(nrc_path):
+            # Ensure the native module _nrc_host can be imported from lib_dir
             if lib_dir not in sys.path:
                 sys.path.insert(0, lib_dir)
-            spec = importlib.util.spec_from_file_location('tl_interface', tl_path)
+            spec = importlib.util.spec_from_file_location('nrc_interface', nrc_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
-            tl_interface = mod
+            nrc_interface = mod
     except Exception:
-        tl_interface = None
+        nrc_interface = None
 
 
 def _is_success(res) -> bool:
-    """Normalize various tl_interface return types to boolean success.
+    """Normalize various nrc_interface return types to boolean success.
 
     - bool -> returned as-is
     - None -> treat as True (many swig void functions)
@@ -331,13 +331,13 @@ class TLArmNode(Node):
         except Exception:
             return False
 
-    # Basic implementations that call into tl_interface if available
+    # Basic implementations that call into nrc_interface if available
 
     def connect(self) -> bool:
         # Mirror the C++ connect() behavior: connect both primary and auxiliary ports,
         # require positive socket fds, register callbacks, and mark connected.
         self.get_logger().info('connect() called')
-        self.get_logger().info(f'tl_interface file = {tl_interface.__file__}')
+        self.get_logger().info(f'nrc_interface file = {nrc_interface.__file__}')
 
         if self.is_connected_:
             self.get_logger().info('[Connect]: arm already connected')
@@ -360,15 +360,15 @@ class TLArmNode(Node):
             fd = None
             fd_aux = None
             self.get_logger().info('Attempting native connect_robot calls')
-            if tl_interface is not None and hasattr(tl_interface, 'connect_robot'):
+            if nrc_interface is not None and hasattr(nrc_interface, 'connect_robot'):
                 try:
-                    fd = tl_interface.connect_robot(ip, port)
+                    fd = nrc_interface.connect_robot(ip, port)
                 except Exception as e:
-                    self.get_logger().error(f'tl_interface.connect_robot() primary raised: {e}')
+                    self.get_logger().error(f'nrc_interface.connect_robot() primary raised: {e}')
                     fd = None
 
                 try:
-                    fd_aux = tl_interface.connect_robot(ip, port_aux)
+                    fd_aux = nrc_interface.connect_robot(ip, port_aux)
                 except Exception:
                     fd_aux = None
 
@@ -405,36 +405,36 @@ class TLArmNode(Node):
             self.is_connected_ = True
 
             # 注册机器人状态回调（必须connect成功后）
-            try:
-                tl_interface.robot_state_callback(
-                    self.fd_aux,
-                    self._robot_state_callback
-                )
+            # try:
+            #     nrc_interface.robot_state_callback(
+            #         self.fd_aux,
+            #         self._robot_state_callback
+            #     )
 
-                self.get_logger().info(
-                    f'robot_state_callback registered, fd_aux={self.fd_aux}'
-                )
+            #     self.get_logger().info(
+            #         f'robot_state_callback registered, fd_aux={self.fd_aux}'
+            #     )
 
-            except Exception as e:
-                self.get_logger().error(
-                    f'robot_state_callback failed: {e}'
-                )
+            # except Exception as e:
+            #     self.get_logger().error(
+            #         f'robot_state_callback failed: {e}'
+            #     )
 
             # register receive callbacks if available
             try:
-                if tl_interface is not None and hasattr(tl_interface, 'set_receive_error_or_warnning_message_callback'):
+                if nrc_interface is not None and hasattr(nrc_interface, 'set_receive_error_or_warnning_message_callback'):
                     def _receive_cb(messageType, message, messageCode):
                         try:
                             self.get_logger().warning(f'receive messageType={messageType}, code={messageCode}, msg={message}')
                         except Exception:
                             pass
                     try:
-                        tl_interface.set_receive_error_or_warnning_message_callback(self.fd, _receive_cb)
+                        nrc_interface.set_receive_error_or_warnning_message_callback(self.fd, _receive_cb)
                     except Exception:
                         pass
 
                 # start recv_message on auxiliary fd to capture asynchronous messages from controller
-                if tl_interface is not None and hasattr(tl_interface, 'recv_message') and self.fd_aux is not None:
+                if nrc_interface is not None and hasattr(nrc_interface, 'recv_message') and self.fd_aux is not None:
                     try:
                         def _recv_msg_cb(msg_id, msg):
                             try:
@@ -442,7 +442,7 @@ class TLArmNode(Node):
                                 # store or handle as needed
                             except Exception:
                                 pass
-                        tl_interface.recv_message(self.fd_aux, _recv_msg_cb)
+                        nrc_interface.recv_message(self.fd_aux, _recv_msg_cb)
                     except Exception:
                         pass
             except Exception:
@@ -481,11 +481,11 @@ class TLArmNode(Node):
         Returns True on success (servo_state == 3), False otherwise.
         """
         self.get_logger().info('power_on() called')
-        if tl_interface is None or self.fd is None:
-            self.get_logger().warning('power_on: tl_interface or fd missing')
+        if nrc_interface is None or self.fd is None:
+            self.get_logger().warning('power_on: nrc_interface or fd missing')
             return False
 
-        ret, state = tl_interface.get_servo_state(self.fd, -1)
+        ret, state = nrc_interface.get_servo_state(self.fd, -1)
         self.get_logger().info(f"get_servo_state ret={ret}, state={state}")
         if ret != 0:
             self.get_logger().error(f"get_servo_state failed ret={ret}")
@@ -493,27 +493,27 @@ class TLArmNode(Node):
         try:
             if state == 0:
                 self.get_logger().info("before set_servo_state")
-                ret = tl_interface.set_servo_state(self.fd, 1)
+                ret = nrc_interface.set_servo_state(self.fd, 1)
                 self.get_logger().info(f"after set_servo_state ret={ret}")
 
                 self.get_logger().info("before set_servo_poweron")
-                ret = tl_interface.set_servo_poweron(self.fd)
+                ret = nrc_interface.set_servo_poweron(self.fd)
                 self.get_logger().info(f"after set_servo_poweron ret={ret}")
             elif state == 1:
                 self.get_logger().info("before set_servo_poweron")
-                ret = tl_interface.set_servo_poweron(self.fd)
+                ret = nrc_interface.set_servo_poweron(self.fd)
                 self.get_logger().info(f"after set_servo_poweron ret={ret}")
             elif state == 2:
                 self.get_logger().info("before clear_error")
-                ret = tl_interface.clear_error(self.fd)
+                ret = nrc_interface.clear_error(self.fd)
                 self.get_logger().info(f"after clear_error ret={ret}")
 
                 self.get_logger().info("before set_servo_state")
-                ret = tl_interface.set_servo_state(self.fd, 1)
+                ret = nrc_interface.set_servo_state(self.fd, 1)
                 self.get_logger().info(f"after set_servo_state ret={ret}")
 
                 self.get_logger().info("before set_servo_poweron")
-                ret = tl_interface.set_servo_poweron(self.fd)
+                ret = nrc_interface.set_servo_poweron(self.fd)
                 self.get_logger().info(f"after set_servo_poweron ret={ret}")
             elif state == 3:
                 self.get_logger().info('[PowerOn]: already power on')
@@ -522,7 +522,7 @@ class TLArmNode(Node):
         except Exception as e:
             self.get_logger().warning(f'power_on sequence failed: {e}')
 
-        ret, state = tl_interface.get_servo_state(self.fd, -1) 
+        ret, state = nrc_interface.get_servo_state(self.fd, -1) 
         if ret == 0 and state == 3:
             self.is_powered_ = True
             self.get_logger().info(f"[PowerOn]: successfully power on, " f"servo_state = {state}")
@@ -534,13 +534,13 @@ class TLArmNode(Node):
     def power_off(self) -> bool:
         """Power off sequence mirroring C++ TL_Arm::power_off()."""
         self.get_logger().info('power_off() called')
-        if tl_interface is None or self.fd is None:
-            self.get_logger().warning('power_off: tl_interface or fd missing')
+        if nrc_interface is None or self.fd is None:
+            self.get_logger().warning('power_off: nrc_interface or fd missing')
             return False
 
         def _read_servo_state():
             try:
-                r = tl_interface.get_servo_state(self.fd, 0)
+                r = nrc_interface.get_servo_state(self.fd, 0)
             except Exception as e:
                 self.get_logger().warning(f'get_servo_state call failed: {e}')
                 return None
@@ -557,8 +557,8 @@ class TLArmNode(Node):
         state = _read_servo_state()
         try:
             if state == 3:
-                if hasattr(tl_interface, 'set_servo_poweroff'):
-                    tl_interface.set_servo_poweroff(self.fd)
+                if hasattr(nrc_interface, 'set_servo_poweroff'):
+                    nrc_interface.set_servo_poweroff(self.fd)
                     new_state = _read_servo_state()
                     self.get_logger().info(f'[PowerOff]: servo_state after off = {new_state}')
                     self.is_powered_ = False
@@ -579,15 +579,15 @@ class TLArmNode(Node):
         self.get_logger().info('disconnect() called')
         with getattr(self, '_conn_lock', threading.Lock()):
             try:
-                if tl_interface is not None:
+                if nrc_interface is not None:
                     try:
-                        if self._valid_fd() and hasattr(tl_interface, 'disconnect_robot'):
-                            tl_interface.disconnect_robot(self.fd)
+                        if self._valid_fd() and hasattr(nrc_interface, 'disconnect_robot'):
+                            nrc_interface.disconnect_robot(self.fd)
                     except Exception:
                         pass
                     try:
-                        if self.fd_aux is not None and int(self.fd_aux) > 0 and hasattr(tl_interface, 'disconnect_robot'):
-                            tl_interface.disconnect_robot(self.fd_aux)
+                        if self.fd_aux is not None and int(self.fd_aux) > 0 and hasattr(nrc_interface, 'disconnect_robot'):
+                            nrc_interface.disconnect_robot(self.fd_aux)
                     except Exception:
                         pass
             except Exception as e:
@@ -636,11 +636,11 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret_state, state = tl_interface.get_servo_state(self.fd, -1)
-            self.get_logger().info(f"get_servo_state ret={ret_state}, " f"state={state}")
+            ret_state = nrc_interface.get_servo_state(self.fd)
+            self.get_logger().info(f"get_servo_state ret={ret_state}")
 
-            if ret_state == 0 and state == 2:
-                ret = tl_interface.clear_error(self.fd)
+            if ret_state == 0:
+                ret = nrc_interface.clear_error(self.fd)
                 response.success = (ret == 0)
                 if response.success:
                     response.message = ("Clear error successfully")
@@ -666,12 +666,12 @@ class TLArmNode(Node):
             response.message = 'invalid speed'
             return response
 
-        # placeholder: pass to tl_interface if available
+        # placeholder: pass to nrc_interface if available
         ok = True
-        if tl_interface is not None and self._valid_fd() and hasattr(tl_interface, 'set_speed'):
+        if nrc_interface is not None and self._valid_fd() and hasattr(nrc_interface, 'set_speed'):
             try:
                 # SWIG binding expects an integer argument for speed
-                _ret = tl_interface.set_speed(self.fd, int(speed))
+                _ret = nrc_interface.set_speed(self.fd, int(speed))
                 # native API returns 0 for SUCCESS; treat 0 as success
                 if isinstance(_ret, bool):
                     ok = bool(_ret)
@@ -680,9 +680,9 @@ class TLArmNode(Node):
                 else:
                     ok = bool(_ret)
                 if not ok:
-                    self.get_logger().error(f'tl_interface.set_speed() returned: {_ret}')
+                    self.get_logger().error(f'nrc_interface.set_speed() returned: {_ret}')
             except Exception as e:
-                self.get_logger().error(f'tl_interface.set_speed() failed: {e}')
+                self.get_logger().error(f'nrc_interface.set_speed() failed: {e}')
                 ok = False
 
         response.success = bool(ok)
@@ -699,7 +699,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret, speed = tl_interface.get_speed(self.fd, 0)
+            ret, speed = nrc_interface.get_speed(self.fd, 0)
             self.get_logger().info(f"get_speed ret={ret}, speed={speed}")
             if ret != 0:
                 response.success = False
@@ -732,12 +732,12 @@ class TLArmNode(Node):
 
         try:
             # SWIG vector<double>
-            quat = tl_interface.VectorDouble()
+            quat = nrc_interface.VectorDouble()
             for v in request.input:
                 quat.append(float(v))
 
-            rpy = tl_interface.VectorDouble()
-            ret = tl_interface.get_quat2rpy(self.fd, quat, rpy)
+            rpy = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_quat2rpy(self.fd, quat, rpy)
             self.get_logger().info(f"get_quat2rpy ret={ret}, rpy={list(rpy) if rpy else []}")
             if ret == 0:
                 response.success = True
@@ -772,12 +772,12 @@ class TLArmNode(Node):
 
         try:
             # 转 SWIG VectorDouble
-            rpy = tl_interface.VectorDouble()
+            rpy = nrc_interface.VectorDouble()
             for v in request.input:
                 rpy.append(float(v))
 
-            quat = tl_interface.VectorDouble()
-            ret = tl_interface.get_rpy2quat(self.fd, rpy, quat)
+            quat = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_rpy2quat(self.fd, rpy, quat)
             self.get_logger().info(f"get_rpy2quat ret={ret}, quat={list(quat) if quat else []}")
             if ret == 0:
                 response.success = True
@@ -811,8 +811,8 @@ class TLArmNode(Node):
         try:
             # 转成 Python list<double>
             rpy_input = list(request.input)
-            rot = tl_interface.VectorDouble()
-            ret = tl_interface.get_rpy2r(self.fd, rpy_input, rot)
+            rot = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_rpy2r(self.fd, rpy_input, rot)
             self.get_logger().info(f"get_rpy2r ret={ret}, rot={list(rot)}")
 
             if ret == 0:
@@ -845,8 +845,8 @@ class TLArmNode(Node):
         try:
             # 转为 Python list
             tr_input = list(request.input)
-            rot = tl_interface.VectorDouble()
-            ret = tl_interface.get_tr2r(self.fd, tr_input, rot)
+            rot = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_tr2r(self.fd, tr_input, rot)
             self.get_logger().info(f"get_tr2r ret={ret}, rot={list(rot)}")
 
             if ret == 0:
@@ -879,8 +879,8 @@ class TLArmNode(Node):
         try:
             # 转为 Python list
             rot_input = list(request.input)
-            tr_matrix = tl_interface.VectorDouble()
-            ret = tl_interface.get_r2tr(self.fd, rot_input, tr_matrix)
+            tr_matrix = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_r2tr(self.fd, rot_input, tr_matrix)
             self.get_logger().info(f"get_r2tr ret={ret}, tr_matrix={list(tr_matrix)}")
 
             if ret == 0:
@@ -905,7 +905,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.set_controller_ip(self.fd, request.name, request.addr, request.gateway, request.dns)
+            ret = nrc_interface.set_controller_ip(self.fd, request.name, request.addr, request.gateway, request.dns)
 
             self.get_logger().info(
                 f"set_controller_ip ret={ret}, "
@@ -936,8 +936,8 @@ class TLArmNode(Node):
             return response
 
         try:
-            controller_id = tl_interface.string(128)  # 分配128字节char*
-            ret = tl_interface.get_controller_id(self.fd, id)
+            controller_id = nrc_interface.string(128)  # 分配128字节char*
+            ret = nrc_interface.get_controller_id(self.fd, id)
             id_str = controller_id.value.decode('utf-8', 'ignore').strip()
             self.get_logger().info(f"get_controller_id ret={ret}, id={id_str}")
             # self.get_logger().info(f"get_controller_id ret={ret}, id={controller_id}")
@@ -964,35 +964,25 @@ class TLArmNode(Node):
             return
 
         try:
-            cmd = tl_interface.MoveCmd()
+            target_pos = list(msg.target_pos_value)  # 直接获取位置数组
 
-            cmd.targetPosType = tl_interface.PosType_data  
-            cmd.targetPosName = ""                          
+            ret = nrc_interface.robot_movej(
+                self.fd,
+                coord=msg.coord,
+                vel=msg.velocity,
+                acc=msg.acc,
+                dec=msg.dec,
+                targetPos=tuple(target_pos)
+            )
 
-            cmd.coord = msg.coord
-            cmd.velocity = msg.velocity
-            cmd.velocitySync = msg.velocity_sync
-            cmd.acc = msg.acc
-            cmd.dec = msg.dec
-            cmd.pl = msg.pl
-            cmd.time = msg.time
-            cmd.toolNum = msg.tool_num
-            cmd.userNum = msg.user_num
-            cmd.posidtype = msg.posidtype
-            cmd.configuration = msg.configuration
-            cmd.spin = msg.spin
-            cmd.parasync = msg.para_sync
-
-            cmd.targetPosValue.clear()
-            for val in msg.target_pos_value:
-                cmd.targetPosValue.push_back(val)
-
-            ret = tl_interface.robot_movej(self.fd, cmd)
-
-            self.get_logger().info(f"[MoveJ]: result={ret}")
+            # 结果打印
+            if ret == 0:
+                self.get_logger().info(f"[MoveJ] successfully! ret={ret}")
+            else:
+                self.get_logger().error(f"[MoveJ] failed! ret={ret}")
 
         except Exception as e:
-            self.get_logger().error(f"[MoveJ] error: {e}")
+            self.get_logger().error(f"[MoveJ] err: {str(e)}")
 
     def handle_movel_topic(self, msg):
         if self.fd is None or not self.is_connected_:
@@ -1000,32 +990,21 @@ class TLArmNode(Node):
             return
 
         try:
-            cmd = tl_interface.MoveCmd()
+            target_pos = list(msg.target_pos_value)  # 直接获取位置数组
 
-            cmd.targetPosType = tl_interface.PosType_data
-            cmd.targetPosName = ""
+            ret = nrc_interface.robot_movel(
+                self.fd,
+                coord=msg.coord,
+                vel=msg.velocity,
+                acc=msg.acc,
+                dec=msg.dec,
+                targetPos=tuple(target_pos)
+            )
 
-            cmd.coord = msg.coord
-            cmd.velocity = msg.velocity
-            cmd.velocitySync = msg.velocity_sync
-            cmd.acc = msg.acc
-            cmd.dec = msg.dec
-            cmd.pl = msg.pl
-            cmd.time = msg.time
-            cmd.toolNum = msg.tool_num
-            cmd.userNum = msg.user_num
-            cmd.posidtype = msg.posidtype
-            cmd.configuration = msg.configuration
-            cmd.spin = msg.spin
-            cmd.parasync = msg.para_sync
-
-            cmd.targetPosValue.clear()
-            for val in msg.target_pos_value:
-                cmd.targetPosValue.push_back(val)
-
-            ret = tl_interface.robot_movel(self.fd, cmd)
-
-            self.get_logger().info(f"[MoveL]: result={ret}")
+            if ret == 0:
+                self.get_logger().info(f"[MoveL] successfully! ret={ret}")
+            else:
+                self.get_logger().error(f"[MoveL] failed! ret={ret}")
 
         except Exception as e:
             self.get_logger().error(f"[MoveL] error: {e}")
@@ -1039,7 +1018,7 @@ class TLArmNode(Node):
                 return
 
             line = msg.line
-            cmd = tl_interface.MoveCmd()
+            cmd = nrc_interface.MoveCmd()
 
             # 使用topic传入的类型
             cmd.targetPosType = msg.cmd.target_pos_type
@@ -1068,7 +1047,7 @@ class TLArmNode(Node):
             cmd.parasync = msg.cmd.para_sync
 
             # 关键修改
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
+            target_pos = nrc_interface.VectorDouble(len(msg.cmd.target_pos_value))
 
             for i, v in enumerate(msg.cmd.target_pos_value):
                 target_pos[i] = float(v)
@@ -1077,7 +1056,7 @@ class TLArmNode(Node):
             self.get_logger().info(f"targetPosName={cmd.targetPosName}")
             self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
-            ret = tl_interface.job_insert_moveJ(self.fd, line, cmd)
+            ret = nrc_interface.job_insert_moveJ(self.fd, line, cmd)
             self.get_logger().info(f"[JobInsertMoveJ]: ret={ret}")
 
         except Exception as e:
@@ -1094,7 +1073,7 @@ class TLArmNode(Node):
 
             line = msg.line
 
-            cmd = tl_interface.MoveCmd()
+            cmd = nrc_interface.MoveCmd()
 
             # target position type
             # 使用topic传入的类型
@@ -1125,7 +1104,7 @@ class TLArmNode(Node):
             cmd.parasync = msg.cmd.para_sync
 
             # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
+            target_pos = nrc_interface.VectorDouble(len(msg.cmd.target_pos_value))
 
             for i, v in enumerate(msg.cmd.target_pos_value):
                 target_pos[i] = float(v)
@@ -1135,7 +1114,7 @@ class TLArmNode(Node):
             self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
             # call sdk
-            ret = tl_interface.job_insert_moveL(self.fd, line, cmd)
+            ret = nrc_interface.job_insert_moveL(self.fd, line, cmd)
 
             self.get_logger().info(f"[JobInsertMoveL]: ret={ret}")
 
@@ -1153,7 +1132,7 @@ class TLArmNode(Node):
 
             line = msg.line
 
-            cmd = tl_interface.MoveCmd()
+            cmd = nrc_interface.MoveCmd()
 
             # target position type
             # 使用topic传入的类型
@@ -1184,7 +1163,7 @@ class TLArmNode(Node):
             cmd.parasync = msg.cmd.para_sync
 
             # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
+            target_pos = nrc_interface.VectorDouble(len(msg.cmd.target_pos_value))
 
             for i, v in enumerate(msg.cmd.target_pos_value):
                 target_pos[i] = float(v)
@@ -1194,7 +1173,7 @@ class TLArmNode(Node):
             self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
             # call sdk
-            ret = tl_interface.job_insert_imove(self.fd, line, cmd)
+            ret = nrc_interface.job_insert_imove(self.fd, line, cmd)
             self.get_logger().info(f"[JobInsertIMove]: ret={ret}")
 
         except Exception as e:
@@ -1211,7 +1190,7 @@ class TLArmNode(Node):
 
             line = msg.line
 
-            cmd = tl_interface.MoveCmd()
+            cmd = nrc_interface.MoveCmd()
 
             # target position type
             # 使用topic传入的类型
@@ -1242,7 +1221,7 @@ class TLArmNode(Node):
             cmd.parasync = msg.cmd.para_sync
 
             # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
+            target_pos = nrc_interface.VectorDouble(len(msg.cmd.target_pos_value))
 
             for i, v in enumerate(msg.cmd.target_pos_value):
                 target_pos[i] = float(v)
@@ -1252,7 +1231,7 @@ class TLArmNode(Node):
             self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
             # call sdk
-            ret = tl_interface.job_insert_moveC(self.fd, line, cmd)
+            ret = nrc_interface.job_insert_moveC(self.fd, line, cmd)
             self.get_logger().info(f"[JobInsertMoveC]: ret={ret}")
 
         except Exception as e:
@@ -1266,9 +1245,9 @@ class TLArmNode(Node):
             response.message = "Arm is not connected"
             return response
 
-        robots_file = tl_interface.VectorVectorString()
+        robots_file = nrc_interface.VectorVectorString()
 
-        ret = tl_interface.job_get_all_jobfile_name(self.fd, robots_file)
+        ret = nrc_interface.job_get_all_jobfile_name(self.fd, robots_file)
 
         # self.get_logger().info(f"DEBUG: job_get_all_jobfile_name return ret = {ret}")
         # self.get_logger().info(f"DEBUG: robots_file size = {robots_file.size()}")
@@ -1308,8 +1287,8 @@ class TLArmNode(Node):
 
         try:
             job_name = str(request.job_name)
-            ret = tl_interface.job_open(self.fd, job_name)
-            ret1 = tl_interface.job_run(self.fd, job_name)
+            ret = nrc_interface.job_open(self.fd, job_name)
+            ret1 = nrc_interface.job_run(self.fd, job_name)
             self.get_logger().info(f"job_open ret={ret}, job_run ret1={ret1}, job_name={job_name}")
             response.success = (ret1 == 0)
             if response.success:
@@ -1336,12 +1315,12 @@ class TLArmNode(Node):
             return response
         ok = True
         try:
-            if tl_interface is not None and hasattr(tl_interface, 'job_delete'):
+            if nrc_interface is not None and hasattr(nrc_interface, 'job_delete'):
                 try:
-                    res = tl_interface.job_delete(self.fd, job_name) if self._valid_fd() else tl_interface.job_delete(job_name)
+                    res = nrc_interface.job_delete(self.fd, job_name) if self._valid_fd() else nrc_interface.job_delete(job_name)
                     ok = _is_success(res)
                 except TypeError:
-                    res = tl_interface.job_delete(job_name)
+                    res = nrc_interface.job_delete(job_name)
                     ok = _is_success(res)
         except Exception as e:
             self.get_logger().error(f'job_delete failed: {e}')
@@ -1363,7 +1342,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.set_current_mode(self.fd, request.mode)
+            ret = nrc_interface.set_current_mode(self.fd, request.mode)
 
             self.get_logger().info(f"set_current_mode ret={ret}, mode={request.mode}")
 
@@ -1388,7 +1367,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.close_servoJ(self.fd_aux)
+            ret = nrc_interface.close_servoJ(self.fd)
             response.success = (ret == 0)
             if response.success:
                 response.message = "ServoJ close successfully"
@@ -1412,12 +1391,12 @@ class TLArmNode(Node):
                 return
 
             # ROS Float64MultiArray -> SWIG VectorDouble
-            pos = tl_interface.VectorDouble()
+            pos = nrc_interface.VectorDouble()
             for v in msg.data:
                 pos.append(float(v))
 
             # call sdk
-            ret = tl_interface.set_servoJ_pos(self.fd_aux, pos)
+            ret = nrc_interface.set_servoJ_pos(self.fd_aux, pos)
             self.get_logger().info(f"[SetServoJPos]: ret={ret}")
 
         except Exception as e:
@@ -1453,11 +1432,11 @@ class TLArmNode(Node):
             pos_info = list(request.pos_info)
             self.get_logger().info(f"set_global_position pos_name={request.pos_name}, " f"pos_info={pos_info}")
 
-            vec = tl_interface.VectorDouble()
+            vec = nrc_interface.VectorDouble()
             for v in pos_info:
                 vec.append(float(v))
 
-            ret = tl_interface.set_global_position(self.fd, request.pos_name, vec)
+            ret = nrc_interface.set_global_position(self.fd, request.pos_name, vec)
             self.get_logger().info(f"set_global_position ret={ret}")
             response.success = (ret == 0)
 
@@ -1497,8 +1476,8 @@ class TLArmNode(Node):
         
         try:
             # vector<double>
-            pos = tl_interface.VectorDouble()
-            ret = tl_interface.get_global_position(self.fd,request.pos_name,pos)
+            pos = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_global_position(self.fd,request.pos_name,pos)
             # self.get_logger().info(f"get_global_position ret={ret}")
             # self.get_logger().info(f"pos len={len(pos)}")
             # self.get_logger().info(f"pos vals={[pos[i] for i in range(len(pos))]}")
@@ -1532,18 +1511,18 @@ class TLArmNode(Node):
         ok = True
         target_pos = []
         try:
-            if tl_interface is not None and hasattr(tl_interface, 'coord_transform'):
+            if nrc_interface is not None and hasattr(nrc_interface, 'coord_transform'):
                 try:
                     buf = []
                     if self._valid_fd():
-                        res = tl_interface.coord_transform(self.fd, origin, target, form, origin_pos, reference, buf)
+                        res = nrc_interface.coord_transform(self.fd, origin, target, form, origin_pos, reference, buf)
                     else:
-                        res = tl_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
+                        res = nrc_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
                     ok = _is_success(res)
                     target_pos = list(buf)
                 except TypeError:
                     buf = []
-                    res = tl_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
+                    res = nrc_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
                     ok = _is_success(res)
                     target_pos = list(buf)
         except Exception as e:
@@ -1567,11 +1546,11 @@ class TLArmNode(Node):
 
         try:
             # Python list -> VectorDouble
-            query_pos = tl_interface.VectorDouble()
+            query_pos = nrc_interface.VectorDouble()
             for v in request.pos:
                 query_pos.append(float(v))
             # bool& 输出参数
-            ret, reachable = tl_interface.get_pos_reachable(self.fd, query_pos, request.move_type, False)
+            ret, reachable = nrc_interface.get_pos_reachable(self.fd, query_pos, request.move_type, False)
             self.get_logger().info(f"get_pos_reachable ret={ret}, "f"reachable={reachable}")
             if ret == 0:
                 response.success = bool(reachable)
@@ -1590,8 +1569,8 @@ class TLArmNode(Node):
         return response
 
     def handle_get_dh_param_service(self, request, response):
-        dh_param = tl_interface.RobotDHParam()
-        ret = tl_interface.get_robot_dh_param(self.fd, dh_param)
+        dh_param = nrc_interface.RobotDHParam()
+        ret = nrc_interface.get_robot_dh_param(self.fd, dh_param)
 
         response.success = (ret == 0)
         if response.success:
@@ -1694,7 +1673,7 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
 
-            dh_param = tl_interface.RobotDHParam()
+            dh_param = nrc_interface.RobotDHParam()
 
             # L1 ~ L20
             dh_param.L1 = request.param.l1
@@ -1766,7 +1745,7 @@ class TLArmNode(Node):
                 dh_param.hanyu.TL.__setitem__(i, request.param.tl[i])
 
             # 调用SDK
-            ret = tl_interface.set_robot_dh_param(self.fd, dh_param)
+            ret = nrc_interface.set_robot_dh_param(self.fd, dh_param)
 
             response.success = (ret == 0)
             if response.success:
@@ -1794,7 +1773,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.track_record_save(self.fd, request.traj_name)
+            ret = nrc_interface.track_record_save(self.fd, request.traj_name)
             self.get_logger().info(f"track_record_save ret={ret}, traj_name={request.traj_name}")
             response.success = (ret == 0)
             if response.success:
@@ -1816,7 +1795,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.track_record_playback(self.fd, request.vel)
+            ret = nrc_interface.track_record_playback(self.fd, request.vel)
             self.get_logger().info(f"track_record_playback ret={ret}, vel={request.vel}")
             response.success = (ret == 0)
             if response.success:
@@ -1845,7 +1824,7 @@ class TLArmNode(Node):
             jmax = list(request.jmax)
 
             # ========= 2. call native interface =========
-            ret = tl_interface.open_servoJ(self.fd_aux, vmax, amax, jmax)
+            ret = nrc_interface.open_servoJ(self.fd_aux, vmax, amax, jmax)
 
             self.get_logger().info(f"open_servoJ ret={ret}")
 
@@ -1874,7 +1853,7 @@ class TLArmNode(Node):
 
         try:
             # 设置连续运动状态
-            ret = tl_interface.queue_motion_set_status(
+            ret = nrc_interface.queue_motion_set_status(
                 self.fd,
                 request.status
             )
@@ -1890,7 +1869,7 @@ class TLArmNode(Node):
             )
             # 关闭连续运动模式后设置为示教模式
             if not request.status:
-                ret_mode = tl_interface.set_current_mode(self.fd, 0)
+                ret_mode = nrc_interface.set_current_mode(self.fd, 0)
                 self.get_logger().info(f"set_current_mode ret={ret_mode}")
 
                 if ret_mode == 0:
@@ -1912,9 +1891,9 @@ class TLArmNode(Node):
 
         try:
             # ========= 1. 构造 MoveCmd =========
-            cmd = tl_interface.MoveCmd()
+            cmd = nrc_interface.MoveCmd()
 
-            cmd.targetPosType = int(tl_interface.PosType_data)
+            cmd.targetPosType = int(nrc_interface.PosType_data)
             cmd.targetPosName = ""
 
             cmd.coord = request.cmd.coord
@@ -1932,12 +1911,12 @@ class TLArmNode(Node):
             cmd.parasync = request.cmd.para_sync
 
             # vector<double>
-            cmd.targetPosValue = tl_interface.VectorDouble()
+            cmd.targetPosValue = nrc_interface.VectorDouble()
             for v in request.cmd.target_pos_value:
                 cmd.targetPosValue.append(float(v))
 
             # ========= 2. push queue =========
-            ret = tl_interface.queue_motion_push_back_moveJ(self.fd, cmd)
+            ret = nrc_interface.queue_motion_push_back_moveJ(self.fd, cmd)
             self.get_logger().info(f"queue_push_moveJ ret={ret}")
             if ret != 0:
                 response.success = False
@@ -1945,7 +1924,7 @@ class TLArmNode(Node):
                 return response
 
             # ========= 3. send to controller =========
-            ret = tl_interface.queue_motion_send_to_controller(self.fd, request.is_continue)
+            ret = nrc_interface.queue_motion_send_to_controller(self.fd, request.is_continue)
 
             self.get_logger().info(f"queue_send ret={ret}")
 
@@ -1971,7 +1950,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret, status = tl_interface.queue_motion_get_status(
+            ret, status = nrc_interface.queue_motion_get_status(
                 self.fd,
                 False
             )
@@ -1991,7 +1970,7 @@ class TLArmNode(Node):
                 return response
 
             # 停止 queue motion
-            ret = tl_interface.queue_motion_stop_not_power_off(self.fd)
+            ret = nrc_interface.queue_motion_stop_not_power_off(self.fd)
             self.get_logger().info(f"queue_motion_stop_not_power_off ret={ret}")
             response.success = (ret == 0)
             if response.success:
@@ -2033,7 +2012,7 @@ class TLArmNode(Node):
             )
 
             # 调用底层接口
-            ret = tl_interface.robot_start_jogging(self.fd, request.axis, request.direction)
+            ret = nrc_interface.robot_start_jogging(self.fd, request.axis, request.direction)
             self.get_logger().info(f"robot_start_jogging ret={ret}")
             response.success = (ret == 0)
 
@@ -2075,7 +2054,7 @@ class TLArmNode(Node):
             self.get_logger().info(f"robot_stop_jogging axis={request.axis}")
 
             # 调用底层接口
-            ret = tl_interface.robot_stop_jogging(self.fd, request.axis)
+            ret = nrc_interface.robot_stop_jogging(self.fd, request.axis)
             self.get_logger().info(f"robot_stop_jogging ret={ret}")
             response.success = (ret == 0)
 
@@ -2105,7 +2084,7 @@ class TLArmNode(Node):
 
             self.msg_received = False
 
-            param = tl_interface.RobotState()
+            param = nrc_interface.RobotState()
 
             param.channel = int(request.channel)
             param.stop = bool(request.stop)
@@ -2123,7 +2102,7 @@ class TLArmNode(Node):
             # 不要clear vector
             # 很容易触发 SWIG 崩溃
 
-            ret = tl_interface.get_robot_state(self.fd_aux, param)
+            ret = nrc_interface.get_robot_state(self.fd_aux, param)
 
             self.get_logger().info(f"get_robot_state ret={ret}")
 
@@ -2167,7 +2146,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            version = tl_interface.get_library_version()
+            version = nrc_interface.get_library_version()
 
             if not version:
                 response.success = False
@@ -2196,8 +2175,8 @@ class TLArmNode(Node):
             return response
 
         try:
-            param = tl_interface.RobotJointParam()
-            ret = tl_interface.get_robot_joint_param(self.fd, request.id, param)
+            param = nrc_interface.RobotJointParam()
+            ret = nrc_interface.get_robot_joint_param(self.fd, request.id, param)
         except Exception as e:
             response.success = False
             response.message = f"call failed: {e}"
@@ -2241,7 +2220,7 @@ class TLArmNode(Node):
                 return response
 
             # 创建 RobotJointParam 结构体
-            param = tl_interface.RobotJointParam()
+            param = nrc_interface.RobotJointParam()
 
             # 填充参数
             param.reducRatio = float(request.param.reduction_ratio)
@@ -2259,7 +2238,7 @@ class TLArmNode(Node):
             param.direction = int(request.param.direction)
 
             # 调用底层接口
-            ret = tl_interface.set_robot_joint_param(self.fd, request.id, param)
+            ret = nrc_interface.set_robot_joint_param(self.fd, request.id, param)
             self.get_logger().info(f"set_robot_joint_param ret={ret}")
             response.success = (ret == 0)
             response.message = (
@@ -2292,7 +2271,7 @@ class TLArmNode(Node):
                 response.message = "Invalid mode"
                 return response
 
-            ret = tl_interface.set_darg_mode(self.fd, request.mode)
+            ret = nrc_interface.set_darg_mode(self.fd, request.mode)
 
             response.success = (ret == 0)
 
@@ -2318,13 +2297,13 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
             
-            # for name in dir(tl_interface):
+            # for name in dir(nrc_interface):
             #     if "Bool" in name or "bool" in name:
             #         self.get_logger().info(name)
             #     else: self.get_logger().error("no bool type??")
 
             flag = False
-            ret, end_flag = tl_interface.get_drag_thread_is_end(self.fd, flag)
+            ret, end_flag = nrc_interface.get_drag_thread_is_end(self.fd, flag)
 
             if ret == 0:
                 response.success = bool(end_flag)
@@ -2356,8 +2335,8 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
 
-            temperatures = tl_interface.VectorDouble()
-            ret = tl_interface.get_joint_temperature(self.fd, temperatures)
+            temperatures = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_joint_temperature(self.fd, temperatures)
             self.get_logger().info(f"get_joint_temperature ret={ret}")
             if ret == 0:
                 response.success = True
@@ -2384,9 +2363,9 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
 
-            joint_voltage = tl_interface.VectorDouble()
-            positioner_voltage = tl_interface.VectorDouble()
-            ret = tl_interface.get_joint_voltage(self.fd, joint_voltage, positioner_voltage)
+            joint_voltage = nrc_interface.VectorDouble()
+            positioner_voltage = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_joint_voltage(self.fd, joint_voltage, positioner_voltage)
             self.get_logger().info(f"get_joint_voltage ret={ret}")
 
             if ret == 0:
@@ -2416,8 +2395,8 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
 
-            motor_current = tl_interface.VectorDouble()
-            ret = tl_interface.get_current_motor_current_independent(self.fd, motor_current)
+            motor_current = nrc_interface.VectorDouble()
+            ret = nrc_interface.get_current_motor_current_independent(self.fd, motor_current)
             self.get_logger().info(f"get_current_motor_current_independent ret={ret}")
 
             if ret == 0:
@@ -2450,12 +2429,12 @@ class TLArmNode(Node):
                 response.success = False
                 response.message = "Invalid axis num"
                 return response
-            for name in dir(tl_interface):
+            for name in dir(nrc_interface):
                 if "String" in name or "string" in name:
                     self.get_logger().info(name)
 
             version_string = ""
-            ret = tl_interface.query_joint_software_version(self.fd, request.axis_num, version_string)
+            ret = nrc_interface.query_joint_software_version(self.fd, request.axis_num, version_string)
             self.get_logger().info(f"query_joint_software_version ret={ret}")
 
             if ret == 0:
@@ -2487,7 +2466,7 @@ class TLArmNode(Node):
 
             # 尝试使用 Python str
             version = ""
-            ret = tl_interface.get_nexmotion_lib_version(self.fd, version)
+            ret = nrc_interface.get_nexmotion_lib_version(self.fd, version)
 
             self.get_logger().info(f"get_nexmotion_lib_version ret={ret}")
 
@@ -2514,7 +2493,7 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
 
-            ret = tl_interface.restore_default_param_DH(self.fd, request.robot_num)
+            ret = nrc_interface.restore_default_param_DH(self.fd, request.robot_num)
             response.success = (ret == 0)
             if response.success:
                 response.message = "Restore default DH param successfully"
@@ -2538,7 +2517,7 @@ class TLArmNode(Node):
                 response.message = "Arm already connected"
                 return response
 
-            ret = tl_interface.set_default_cartesian_params(self.fd)
+            ret = nrc_interface.set_default_cartesian_params(self.fd)
 
             response.success = (ret == 0)
 
@@ -2563,7 +2542,7 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
 
-            ret = tl_interface.log_download_by_quantity(self.fd, request.count, request.directory_path)
+            ret = nrc_interface.log_download_by_quantity(self.fd, request.count, request.directory_path)
 
             response.success = (ret == 0)
 
@@ -2590,7 +2569,7 @@ class TLArmNode(Node):
 
         try:
             # 创建底层 ToolParam 对象
-            param = tl_interface.ToolParam()
+            param = nrc_interface.ToolParam()
 
             # 位姿参数
             param.X = request.param.x
@@ -2613,7 +2592,7 @@ class TLArmNode(Node):
             self.get_logger().info(f"set_tool_hand_param tool_num={request.tool_num}")
 
             # 调用底层接口
-            ret = tl_interface.set_tool_hand_param(self.fd, request.tool_num, param)
+            ret = nrc_interface.set_tool_hand_param(self.fd, request.tool_num, param)
             self.get_logger().info(f"set_tool_hand_param ret={ret}")
             response.success = (ret == 0)
 
@@ -2654,12 +2633,12 @@ class TLArmNode(Node):
             )
 
             # 转换为 SWIG VectorDouble
-            pos = tl_interface.VectorDouble()
+            pos = nrc_interface.VectorDouble()
             for v in pos_list:
                 pos.append(float(v))
 
             # 调用底层接口
-            ret = tl_interface.set_user_coordinate_data(self.fd, request.user_num, pos)
+            ret = nrc_interface.set_user_coordinate_data(self.fd, request.user_num, pos)
             self.get_logger().info(f"set_user_coordinate_data ret={ret}")
             response.success = (ret == 0)
 
@@ -2683,7 +2662,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.set_axis_zero_position(self.fd, request.axis)
+            ret = nrc_interface.set_axis_zero_position(self.fd, request.axis)
 
             self.get_logger().info(f"set_axis_zero_position ret={ret}, axis={request.axis}")
 
@@ -2708,7 +2687,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.set_current_coord(self.fd, request.coord)
+            ret = nrc_interface.set_current_coord(self.fd, request.coord)
 
             self.get_logger().info(f"set_current_coord ret={ret}, coord={request.coord}")
 
@@ -2733,9 +2712,9 @@ class TLArmNode(Node):
             response.message = "Arm is not connected"
             return response
         try:
-            # self.get_logger().info(tl_interface.get_tool_hand_number.__doc__)
-            ret,tool_num = tl_interface.get_tool_hand_number(self.fd, -1)
-            ret1,user_num = tl_interface.get_user_coord_number(self.fd, -1)
+            # self.get_logger().info(nrc_interface.get_tool_hand_number.__doc__)
+            ret,tool_num = nrc_interface.get_tool_hand_number(self.fd, -1)
+            ret1,user_num = nrc_interface.get_user_coord_number(self.fd, -1)
             # self.get_logger().info(f"get_tool_hand_number return: ret={ret}, tool_num={tool_num}")
             # self.get_logger().info(f"get_user_coord_number return: ret={ret1}, user_num={user_num}")    
             if ret == 0 and ret1 == 0:
@@ -2763,17 +2742,17 @@ class TLArmNode(Node):
             response.message = 'invalid request'
             return response
         ok = True
-        if tl_interface is not None and hasattr(tl_interface, 'tool_hand_calib'):
+        if nrc_interface is not None and hasattr(nrc_interface, 'tool_hand_calib'):
             try:
                 if self._valid_fd():
                     try:
-                        ok = tl_interface.tool_hand_calib(self.fd, tool_num, point_num)
+                        ok = nrc_interface.tool_hand_calib(self.fd, tool_num, point_num)
                     except TypeError:
-                        ok = tl_interface.tool_hand_calib(tool_num, point_num)
+                        ok = nrc_interface.tool_hand_calib(tool_num, point_num)
                 else:
-                    ok = tl_interface.tool_hand_calib(tool_num, point_num)
+                    ok = nrc_interface.tool_hand_calib(tool_num, point_num)
             except Exception as e:
-                self.get_logger().error(f'tl_interface.tool_hand_calib failed: {e}')
+                self.get_logger().error(f'nrc_interface.tool_hand_calib failed: {e}')
                 ok = False
         response.success = bool(ok)
         response.message = 'ok' if ok else 'failed'
@@ -2793,7 +2772,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.set_digital_output(self.fd, request.port, request.value)
+            ret = nrc_interface.set_digital_output(self.fd, request.port, request.value)
 
             self.get_logger().info(f"set_digital_output ret={ret}, " f"port={request.port}, value={request.value}")
 
@@ -2819,11 +2798,11 @@ class TLArmNode(Node):
 
         try:
 
-            digital_input = tl_interface.VectorInt()
-            digital_output = tl_interface.VectorInt()
+            digital_input = nrc_interface.VectorInt()
+            digital_output = nrc_interface.VectorInt()
 
-            ret = tl_interface.get_digital_input(self.fd, digital_input)
-            ret1 = tl_interface.get_digital_output(self.fd, digital_output)
+            ret = nrc_interface.get_digital_input(self.fd, digital_input)
+            ret1 = nrc_interface.get_digital_output(self.fd, digital_output)
             if ret == 0 and ret1 == 0:
                 response.success = True
                 response.message = ("Get digital input output successfully")
@@ -2850,7 +2829,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            master_param = tl_interface.ModbusMasterParameter()
+            master_param = nrc_interface.ModbusMasterParameter()
             master_param.type = request.master_param.type
             master_param.startAddress = request.master_param.start_addr
 
@@ -2871,7 +2850,7 @@ class TLArmNode(Node):
                 response.message = "Invalid master type"
                 return response
 
-            ret = tl_interface.modbus_set_master_parameter(self.fd, request.master_id, master_param)
+            ret = nrc_interface.modbus_set_master_parameter(self.fd, request.master_id, master_param)
             self.get_logger().info(f"modbus_set_master_parameter ret={ret}")
 
             if ret != 0:
@@ -2879,7 +2858,7 @@ class TLArmNode(Node):
                 response.message = "Failed to set master parameter"
                 return response
 
-            ret = tl_interface.modbus_open_master(self.fd, request.master_id)
+            ret = nrc_interface.modbus_open_master(self.fd, request.master_id)
             self.get_logger().info(f"modbus_open_master ret={ret}")
 
             if ret != 0:
@@ -2887,12 +2866,12 @@ class TLArmNode(Node):
                 response.message = "Failed to open master"
                 return response
 
-            data = tl_interface.VectorInt()
+            data = nrc_interface.VectorInt()
 
             for v in request.data:
                 data.append(int(v))
 
-            ret = tl_interface.modbus_write_multiple_holding_registers(self.fd, request.master_id, request.addr, data)
+            ret = nrc_interface.modbus_write_multiple_holding_registers(self.fd, request.master_id, request.addr, data)
             self.get_logger().info(f"modbus_write ret={ret}")
             response.success = (ret == 0)
             response.message = (
@@ -2917,7 +2896,7 @@ class TLArmNode(Node):
 
         try:
             # 构造 ModbusMasterParameter
-            master_param = tl_interface.ModbusMasterParameter()
+            master_param = nrc_interface.ModbusMasterParameter()
             master_param.type = request.master_param.type
             master_param.startAddress = request.master_param.start_addr
 
@@ -2940,7 +2919,7 @@ class TLArmNode(Node):
 
 
             # set master parameter
-            ret = tl_interface.modbus_set_master_parameter(self.fd, request.master_id, master_param)
+            ret = nrc_interface.modbus_set_master_parameter(self.fd, request.master_id, master_param)
             self.get_logger().info(f"modbus_set_master_parameter ret={ret}")
 
             if ret != 0:
@@ -2949,7 +2928,7 @@ class TLArmNode(Node):
                 return response
 
             # open master
-            ret = tl_interface.modbus_open_master(self.fd, request.master_id)
+            ret = nrc_interface.modbus_open_master(self.fd, request.master_id)
             self.get_logger().info(f"modbus_open_master ret={ret}")
 
             if ret != 0:
@@ -2958,8 +2937,8 @@ class TLArmNode(Node):
                 return response
 
             # read holding registers
-            data = tl_interface.VectorInt()
-            ret = tl_interface.modbus_read_holding_registers(self.fd, request.master_id, request.addr, request.quantity, data)
+            data = nrc_interface.VectorInt()
+            ret = nrc_interface.modbus_read_holding_registers(self.fd, request.master_id, request.addr, request.quantity, data)
 
             self.get_logger().info(f"modbus_read_holding_registers ret={ret}")
             response.success = (ret == 0)
@@ -2989,10 +2968,10 @@ class TLArmNode(Node):
                 st.run_state = "STOP"
                 try:
 
-                    if (tl_interface is not None and hasattr(tl_interface, 'get_robot_state')):
+                    if (nrc_interface is not None and hasattr(nrc_interface, 'get_robot_state')):
 
-                        ret = tl_interface.RobotState()
-                        state = tl_interface.get_robot_state(self.fd, ret)
+                        ret = nrc_interface.RobotState()
+                        state = nrc_interface.get_robot_state(self.fd, ret)
                         # self.get_logger().info(f'robot_state={state}')
                         if state == 0:
                             st.run_state = "STOP"
@@ -3014,21 +2993,19 @@ class TLArmNode(Node):
             joints = self.get_parameter('arm_joints').get_parameter_value().string_array_value
             js.name = joints
 
-            joint_pose = tl_interface.VectorDouble()
             pos_ok = False
-            if tl_interface is not None and hasattr(tl_interface, 'get_current_position'):
+            if nrc_interface is not None and hasattr(nrc_interface, 'get_current_position'):
                 try:
-                    ret = tl_interface.get_current_position(self.fd, 0, joint_pose)
-                    if hasattr(joint_pose, '__len__') and len(joint_pose) >= 6 and ret == 0:
-                        # 角度转弧度
-                        # self.get_logger().info(f"joint_angle(deg) = {list(joint_pose)}") # 示教器上是角度，ROS里通常用弧度
-                        deg_to_rad = math.pi / 180.0
+                    pos_list = nrc_interface.get_current_position(self.fd, 0)  # 直接返回Python列表
+                    if pos_list and len(pos_list) >= 6:
                         ndof = len(joints)
-                        # C++ 6轴时去掉最后一位
-                        if ndof == 6 and len(joint_pose) > 6:
-                            pos = [joint_pose[i] * deg_to_rad for i in range(6)]
+                        
+                        # 6轴机器人取前6个，7轴取7个
+                        if ndof == 6:
+                            pos = pos_list[:6]  # 直接用角度
                         else:
-                            pos = [joint_pose[i] * deg_to_rad for i in range(ndof)]
+                            pos = pos_list[:ndof]  # 直接用角度
+
                         js.position = pos
                         pos_ok = True
                 except Exception as e:
@@ -3051,35 +3028,28 @@ class TLArmNode(Node):
                 msg.header.stamp = self.get_clock().now().to_msg()
                 msg.header.frame_id = "base_link"
                 pose_ok = False
-                if (tl_interface is not None and hasattr(tl_interface, 'get_current_position')):
+                if (nrc_interface is not None and hasattr(nrc_interface, 'get_current_position')):
                     try:
 
-                        cartesian_pose = tl_interface.VectorDouble()
-                        ret = tl_interface.get_current_position(self.fd, 1, cartesian_pose)
-                        # self.get_logger().info(f'tcp ret={ret}')
-                        # self.get_logger().info(f'tcp len={len(cartesian_pose)}')
+                        cartesian_list = nrc_interface.get_current_position(self.fd, 1)
 
-                        vals = []
-                        for i in range(len(cartesian_pose)):
-                            vals.append(cartesian_pose[i])
-
-                        # self.get_logger().info(f'tcp vals={vals}')
-
-                        if len(cartesian_pose) >= 6 and ret == 0:
-                            msg.position.x = cartesian_pose[0]
-                            msg.position.y = cartesian_pose[1]
-                            msg.position.z = cartesian_pose[2]
+                        if cartesian_list and len(cartesian_list) >= 6:
+                            # 直接赋值，无需遍历
+                            msg.position.x = cartesian_list[0]
+                            msg.position.y = cartesian_list[1]
+                            msg.position.z = cartesian_list[2]
+                            
                             # rpy
-                            msg.rpy.x = cartesian_pose[3]
-                            msg.rpy.y = cartesian_pose[4]
-                            msg.rpy.z = cartesian_pose[5]
+                            msg.rpy.x = cartesian_list[3]
+                            msg.rpy.y = cartesian_list[4]
+                            msg.rpy.z = cartesian_list[5]
+
                             # arm angle
                             ndof = len(self.get_parameter('arm_joints').get_parameter_value().string_array_value)
                             if ndof == 6:
                                 msg.arm_angle = 0.0
-
-                            elif ndof == 7 and len(cartesian_pose) > 6:
-                                msg.arm_angle = cartesian_pose[6]
+                            elif ndof == 7 and len(cartesian_list) > 6:
+                                msg.arm_angle = cartesian_list[6]
 
                             pose_ok = True
 
