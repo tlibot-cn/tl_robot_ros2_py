@@ -1,8 +1,8 @@
 #ifndef INCLUDE_CPP_INTERFACE_NRC_INTERFACE_H_
 #define INCLUDE_CPP_INTERFACE_NRC_INTERFACE_H_
 
-#include "cpp/parameter/nrc_define.h"
-#include "cpp/parameter/nrc_interface_parameter.h"
+#include "cpp/parameter/tl_define.h"
+#include "cpp/parameter/tl_interface_parameter.h"
 
 #include <string>
 #include <vector>

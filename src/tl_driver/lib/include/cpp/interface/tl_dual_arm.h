@@ -1,5 +1,5 @@
 /*
- * nrc_dual_arm.h
+ * tl_dual_arm.h
  *
  *  Created on: 2025年9月16日
  *      Author: liuhao
@@ -8,8 +8,8 @@
 #ifndef INCLUDE_CPP_INTERFACE_NRC_DUAL_ARM_H_
 #define INCLUDE_CPP_INTERFACE_NRC_DUAL_ARM_H_
 
-#include "cpp/parameter/nrc_define.h"
-#include "cpp/parameter/nrc_interface_parameter.h"
+#include "cpp/parameter/tl_define.h"
+#include "cpp/parameter/tl_interface_parameter.h"
 
 /**
  * @brief 设置一条move指令执行完成时回调函数。

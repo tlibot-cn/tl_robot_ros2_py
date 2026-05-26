@@ -1,8 +1,8 @@
 #ifndef INCLUDE_CPP_INTERFACE_NRC_CRAFT_LASER_CUTTING_H_
 #define INCLUDE_CPP_INTERFACE_NRC_CRAFT_LASER_CUTTING_H_
 
-#include "cpp/parameter/nrc_define.h"
-#include "cpp/parameter/nrc_craft_laser_cutting_parameter.h"
+#include "cpp/parameter/tl_define.h"
+#include "cpp/parameter/tl_craft_laser_cutting_parameter.h"
 
 /**
  * @brief 设置切割的全局参数

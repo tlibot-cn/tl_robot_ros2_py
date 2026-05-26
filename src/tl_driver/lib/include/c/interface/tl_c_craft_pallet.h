@@ -1,5 +1,5 @@
 /*
- * nrc_craft_pallet.h
+ * tl_craft_pallet.h
  *
  *  Created on: 2025年9月11日
  *      Author: yiixiong
@@ -8,7 +8,7 @@
 #ifndef INCLUDE_C_INTERFACE_NRC_C_CRAFT_PALLET_H_
 #define INCLUDE_C_INTERFACE_NRC_C_CRAFT_PALLET_H_
 
-#include "c/parameter/nrc_define.h"
+#include "c/parameter/tl_define.h"
 
 #ifdef __cplusplus
 extern "C" {

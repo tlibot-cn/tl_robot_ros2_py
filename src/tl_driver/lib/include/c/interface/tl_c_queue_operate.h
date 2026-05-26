@@ -1,5 +1,5 @@
 /*
- * nrc_c_queue_operate.h
+ * tl_c_queue_operate.h
  *
  *  Created on: 2025年1月24日
  *      Author: yiixiong
@@ -8,7 +8,7 @@
 #ifndef INCLUDE_C_INTERFACE_NRC_C_QUEUE_OPERATE_H_
 #define INCLUDE_C_INTERFACE_NRC_C_QUEUE_OPERATE_H_
 
-#include "c/parameter/nrc_define.h"
+#include "c/parameter/tl_define.h"
 
 #ifdef __cplusplus
 extern "C" {

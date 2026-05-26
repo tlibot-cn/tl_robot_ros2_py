@@ -1,5 +1,5 @@
 /*
- * nrc_vision.h
+ * tl_vision.h
  *
  *  Created on: 2024年5月14日
  *      Author: inexbot
@@ -8,8 +8,8 @@
 #ifndef INCLUDE_CPP_INTERFACE_NRC_CRAFT_VISION_H_
 #define INCLUDE_CPP_INTERFACE_NRC_CRAFT_VISION_H_
 
-#include "cpp/parameter/nrc_define.h"
-#include "cpp/parameter/nrc_craft_vision_parameter.h"
+#include "cpp/parameter/tl_define.h"
+#include "cpp/parameter/tl_craft_vision_parameter.h"
 
 /**
  * @brief 设置视觉的基本参数

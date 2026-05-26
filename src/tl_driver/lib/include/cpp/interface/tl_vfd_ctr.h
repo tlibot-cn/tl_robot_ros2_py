@@ -1,5 +1,5 @@
 /*
- * nrc_vfd_ctr.h
+ * tl_vfd_ctr.h
  *
  *  Created on: 2025年8月28日
  *      Author: syf
@@ -10,8 +10,8 @@
 #ifndef INCLUDE_API_NRC_VFD_CTR_H_
 #define INCLUDE_API_NRC_VFD_CTR_H_
 
-#include "cpp/parameter/nrc_define.h"
-#include "cpp/parameter/nrc_interface_parameter.h"
+#include "cpp/parameter/tl_define.h"
+#include "cpp/parameter/tl_interface_parameter.h"
 #include <string>
 #include <vector>
 

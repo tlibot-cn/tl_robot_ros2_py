@@ -1,8 +1,8 @@
 #ifndef INCLUDE_CPP_INTERFACE_NRC_CRAFT_WELD_H_
 #define INCLUDE_CPP_INTERFACE_NRC_CRAFT_WELD_H_
 
-#include "cpp/parameter/nrc_define.h"
-#include "cpp/parameter/nrc_craft_weld_parameter.h"
+#include "cpp/parameter/tl_define.h"
+#include "cpp/parameter/tl_craft_weld_parameter.h"
 
 /**
  * @brief 获取焊接参数

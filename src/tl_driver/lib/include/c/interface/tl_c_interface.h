@@ -1,8 +1,8 @@
 #ifndef INCLUDE_C_INTERFACE_NRC_C_INTERFACE_H_
 #define INCLUDE_C_INTERFACE_NRC_C_INTERFACE_H_
 
-#include "c/parameter/nrc_define.h"
-#include "c/parameter/nrc_interface_parameter.h"
+#include "c/parameter/tl_define.h"
+#include "c/parameter/tl_interface_parameter.h"
 
 #ifdef __cplusplus
 extern "C" {

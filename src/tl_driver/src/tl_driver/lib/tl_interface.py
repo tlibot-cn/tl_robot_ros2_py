@@ -5,11 +5,15 @@
 # the SWIG interface file instead.
 
 from sys import version_info as _swig_python_version_info
-# Import the low-level C/C++ module
-if __package__ or "." in __name__:
-    from . import _nrc_host
-else:
-    import _nrc_host
+# Import the low-level C/C++ module (_tl_host.so exposes PyInit__nrc_host)
+import importlib.util as _importlib_util
+import os as _os
+_swig_spec = _importlib_util.spec_from_file_location(
+    '_nrc_host',
+    _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '_tl_host.so')
+)
+_nrc_host = _importlib_util.module_from_spec(_swig_spec)
+_swig_spec.loader.exec_module(_nrc_host)
 
 try:
     import builtins as __builtin__

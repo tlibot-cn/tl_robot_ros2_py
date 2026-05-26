@@ -1,5 +1,5 @@
 /*
- * nrc_track.h
+ * tl_track.h
  *
  *  Created on: 2024年11月13日
  *      Author: yiixiong
@@ -8,7 +8,7 @@
 #ifndef INCLUDE_CPP_INTERFACE_NRC_TRACK_H_
 #define INCLUDE_CPP_INTERFACE_NRC_TRACK_H_
 
-#include "cpp/parameter/nrc_define.h"
+#include "cpp/parameter/tl_define.h"
 
 /**
  * @brief 轨迹记录开始

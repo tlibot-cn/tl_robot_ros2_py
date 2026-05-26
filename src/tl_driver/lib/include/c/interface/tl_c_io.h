@@ -1,5 +1,5 @@
 /*
- * nrc_c_io.h
+ * tl_c_io.h
  *
  *  Created on: 2025年1月24日
  *      Author: yiixiong
@@ -8,7 +8,7 @@
 #ifndef INCLUDE_C_INTERFACE_NRC_C_IO_H_
 #define INCLUDE_C_INTERFACE_NRC_C_IO_H_
 
-#include "c/parameter/nrc_define.h"
+#include "c/parameter/tl_define.h"
 
 #ifdef __cplusplus
 extern "C" {

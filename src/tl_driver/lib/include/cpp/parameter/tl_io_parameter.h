@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include "nrc_define.h"
+#include "tl_define.h"
 
 struct AlarmdIO {
     int msgType;            // 消息类型 0：普通消息，1：警告消息，2：错误消息, 22.07没有此参数，全部设为 0 即可

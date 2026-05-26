@@ -1,7 +1,7 @@
 #ifndef INCLUDE_CPP_INTERFACE_NRC_QUEUE_OPERATE_H_
 #define INCLUDE_CPP_INTERFACE_NRC_QUEUE_OPERATE_H_
 
-#include "cpp/parameter/nrc_define.h"
+#include "cpp/parameter/tl_define.h"
 
 /**
 * @brief 打开or关闭控制器的队列运动模式
