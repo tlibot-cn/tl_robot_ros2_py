@@ -9,7 +9,7 @@ import sys
 import os
 import time
 # 加载动态库
-_lib = ctypes.CDLL(os.path.join(os.path.dirname(__file__), '_nrc_host.so'))
+_lib = ctypes.CDLL(os.path.join(os.path.dirname(__file__), '_tl_host.so'))
 
 # ---------- 基础类型 ----------
 SOCKETFD = ctypes.c_int
