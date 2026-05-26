@@ -192,7 +192,7 @@ ros2 service call /tl_driver/get_controller_id std_srvs/srv/Trigger "{}"
 | 功能描述 | 查询机械臂详细状态 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
-| 参数说明 | GetRobotState.srv<br>int32 channel：查询通道<br>bool stop：是否停止发送<br>int32 mode：查询模式（0-只回复一次  1-持续回复）<br>int32 interval：仅mode = 1时有效，回复时间范围 [10,60000] ms<br>bool io_state：查询IO<br>int32 position：0-关节坐标  1-直角坐标<br>bool detail_motion_pos：机械臂的运动点位<br>int32 pos_num：当查询机械臂运动点位时，posNum为每帧数据回复的点位数目<br>string[] io_port：IO端口，可查询的最大数量不可大于IO实际个数 例子:[ “DI1”, “DI16”, “DO1”, “DO3”, “DO17”]<br>string[] optional：查询运动点位返回的坐标类型  "ACS"-关节参数 "MCS"-直角参数 "time"-时间戳 "reset"-重置点位记录|
+| 参数说明 | GetRobotState.srv<br>int32 channel：查询通道<br>bool stop：是否停止发送<br>int32 mode：查询模式（0-只回复一次  1-持续回复）<br>int32 interval：仅mode = 1时有效，回复时间范围 [10,60000] ms<br>bool io_state：查询IO<br>int32 position：0-关节坐标  1-直角坐标<br>bool detail_motion_pos：机械臂的运动点位<br>int32 pos_sum：当查询机械臂运动点位时，posSum为每帧数据回复的点位数目<br>string[] io_port：IO端口，可查询的最大数量不可大于IO实际个数 例子:[ “DI1”, “DI16”, “DO1”, “DO3”, “DO17”]<br>string[] optional：查询运动点位返回的坐标类型  "ACS"-关节参数 "MCS"-直角参数 "time"-时间戳 "reset"-重置点位记录|
 | 返回值 | true-查询成功，false-查询失败<br>查询成功时返回对应的查询信息|
 #### 命令示例
 ```
@@ -258,7 +258,7 @@ ros2 service call /tl_driver/get_joint_voltage tl_ros2_interface/srv/GetJointVol
 | 返回值 | true-查询成功，false-查询失败<br>查询成功时返回各个独立轴电机电流<br>float64[] current_motor：机械臂独立轴电机电流 |
 #### 命令示例
 ```
-ros2 service call /tl_driver/get_joint_voltage tl_ros2_interface/srv/GetJointVoltage "{}"
+ros2 service call /tl_driver/get_motor_current tl_ros2_interface/srv/GetMotorCurrent "{}"
 ```
 ### 查询关节软件版本号
 | 功能描述 | 查询指定关节（轴）软件版本号 |
@@ -300,7 +300,7 @@ ros2 service call /tl_driver/get_current_coord tl_ros2_interface/srv/GetCurrentC
 ros2 service call /tl_driver/get_coord_num tl_ros2_interface/srv/GetCoordNum "{}"
 ```
 ### 查询机械臂DH参数
-| 功能描述 | 设置机械臂DH参数 |
+| 功能描述 | 查询机械臂DH参数 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
 | 参数说明 | GetDHParam.srv|
@@ -360,7 +360,7 @@ ros2 service call /tl_driver/set_controller_ip tl_ros2_interface/srv/SetControll
 }"
 ```
 ### 设置关节参数
-| 功能描述 | 设置机械臂关节参赛 |
+| 功能描述 | 设置机械臂关节参数 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
 | 参数说明 | SetRobotJointParam.srv<br>int32 id：关节序号<br>RobotJointParam.msg<br>相关参数查阅[查询关节参数](#查询关节参数)返回值部分 |
@@ -427,7 +427,7 @@ ros2 service call /tl_driver/coord_transform tl_ros2_interface/srv/CoordTransfor
 }'
 ```
 ### 设置机械臂DH参数
-| 功能描述 | 查询机械臂DH参数 |
+| 功能描述 | 设置机械臂DH参数 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
 | 参数说明 | SetDHParam.srv<br>RobotDHParam.msg（机械臂DH参数）|
@@ -703,7 +703,7 @@ ros2 service call /tl_driver/set_tool_param tl_ros2_interface/srv/SetToolParam \
 | 功能描述 | 工具手参数标定 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
-| 参数说明 | ToolHandCalib.srv<br>int32 tool_num：工具坐标系序号|
+| 参数说明 | ToolHandCalib.srv<br>int32 tool_num：工具坐标系序号<br>int32 point_num：标定点数 |
 | 返回值 | true-标定成功，false-标定失败|
 #### 命令示例
 ```
@@ -746,7 +746,7 @@ ros2 service call /tl_driver/set_user_coord tl_ros2_interface/srv/SetUserCoord \
 | 功能描述 | 设置工具坐标系和用户坐标系编号 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
-| 参数说明 | GetCoordNum.srv<br>int32 tool_num：工具坐标系序号<br>int32 user_num：用户坐标系序号 |
+| 参数说明 | SetCoordNum.srv<br>int32 tool_num：工具坐标系序号<br>int32 user_num：用户坐标系序号 |
 | 返回值 | true-设置成功，false-设置失败 |
 ```
 ros2 service call /tl_driver/set_coord_num tl_ros2_interface/srv/SetCoordNum "{tool_num: 1, user_num: 2}"
@@ -801,7 +801,7 @@ ros2 service call /tl_driver/set_drag_mode tl_ros2_interface/srv/SetDragMode "{m
 | 返回值 | true-拖拽结束，false-拖拽未结束 |
 #### 命令示例
 ```
-ros2 service call /tl_driver/get_drag_statu std_srvs/srv/Trigger "{}"
+ros2 service call /tl_driver/get_drag_status std_srvs/srv/Trigger "{}"
 ```
 ### 拖拽轨迹保存
 | 功能描述 | 拖拽轨迹保存 |
@@ -935,7 +935,7 @@ ros2 service call /tl_driver/modbus_write tl_ros2_interface/srv/ModbusWrite \
 | 功能描述 | Modbus数据读取 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
-| 参数说明 | ModbusRead.srv<br>int32 quantity：读取数量<br>其它相关参数可参考读Modbus部分|
+| 参数说明 | ModbusRead.srv<br>int32 master_id：主站ID<br>int32 addr：主站地址<br>int32 quantity：读取数量<br>tl_ros2_interface/ModbusMasterParam master_param：Modbus主站参数<br>其它相关参数可参考写Modbus部分|
 | 返回值 | true-写入成功，false-写入失败|
 #### 命令示例
 ```
@@ -1006,7 +1006,7 @@ ros2 service call /tl_driver/queue_motion_stop std_srvs/srv/Trigger "{}"
 | 功能描述 | 打开关节跟踪模式 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
-| 参数说明 | OpenServoJ.srv<br>float64[] vmax：最大速度<br>float64[] vmax：最大加速度<br>float64[] jmax：最大加加速度|
+| 参数说明 | OpenServoJ.srv<br>float64[] vmax：最大速度<br>float64[] amax：最大加速度<br>float64[] jmax：最大加加速度|
 | 返回值 | true-打开成功，false-打开失败|
 #### 命令示例
 ```
@@ -1029,7 +1029,7 @@ ros2 service call /tl_driver/open_servoj tl_ros2_interface/srv/OpenServoJ \
 ros2 service call /tl_driver/close_servoj std_srvs/srv/Trigger "{}"
 ```
 ### 发送跟踪关节位置
-| 功能描述 | 机械臂MoveL运动控制 |
+| 功能描述 | 发送跟踪关节位置 |
 | :---: | :---- |
 | 通信机制 | ROS2话题 |
 | 参数说明 | std_msgs::msg::Float64MultiArray<br>float64[] data：目标关节角度 |
@@ -1100,7 +1100,7 @@ ros2 service call /tl_driver/get_tr2r tl_ros2_interface/srv/GetPosTransform \
 }"
 ```
 ### 旋转矩阵转位姿
-| 功能描述 | 位姿转旋转矩阵 |
+| 功能描述 | 旋转矩阵转位姿 |
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
 | 参数说明 | GetPosTransform.srv<br>float64[] input：旋转矩阵输入(长度为9) |
@@ -1112,4 +1112,3 @@ ros2 service call /tl_driver/get_r2tr tl_ros2_interface/srv/GetPosTransform \
     input: [0.703, 0.691, 0.166, 0.652, -0.720, 0.236, 0.283, -0.057, -0.957]
 }"
 ```
-
