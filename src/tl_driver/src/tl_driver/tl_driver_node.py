@@ -180,7 +180,6 @@ class TLArmNode(Node):
             self.create_service(srvs.SetCurrentCoord, '/tl_driver/set_current_coord', self.handle_set_current_coord_service)
             self.create_service(srvs.GetCurrentCoord, '/tl_driver/get_current_coord', self.handle_get_current_coord_service)
             self.create_service(srvs.GetCoordNum, '/tl_driver/get_coord_num', self.handle_get_coord_num_service)
-            self.create_service(srvs.ToolHandCalib, '/tl_driver/tool_hand_calib', self.handle_tool_hand_calib_service)
 
             # additional services mirroring C++ node
             self.create_service(srvs.GetAllJobFileName, '/tl_driver/get_all_job_filename', self.handle_get_all_job_filename_service)
@@ -651,7 +650,7 @@ class TLArmNode(Node):
             self.get_logger().info(f"get_speed ret={ret}")
             
             # 返回值 != 0 代表失败
-            if ret != 0:  # 你也可以直接写 if ret != 0:
+            if ret < 0:  # 你也可以直接写 if ret != 0:
                 response.success = False
                 response.message = "Failed to get speed"
                 return response
@@ -675,36 +674,29 @@ class TLArmNode(Node):
             response.message = "Arm is not connected"
             return response
 
-        # 四元数至少4维
+        # 四元数必须是4维
         if len(request.input) < 4:
             response.success = False
-            response.message = "Invalid quat input"
+            response.message = "Invalid quat input (need 4 elements)"
             return response
 
         try:
-            # SWIG vector<double>
-            quat = tl_interface.VectorDouble()
-            for v in request.input:
-                quat.append(float(v))
+            quat_list = list(request.input)
+            ret, roll, pitch, yaw = tl_interface.get_quat2rpy(self.fd, quat_list)
+            self.get_logger().info(f"get_quat2rpy ret={ret}, rpy=[{roll}, {pitch}, {yaw}]")
 
-            rpy = tl_interface.VectorDouble()
-            ret = tl_interface.get_quat2rpy(self.fd, quat, rpy)
-            self.get_logger().info(f"get_quat2rpy ret={ret}, rpy={list(rpy) if rpy else []}")
-            if ret == 0:
+            if ret == 0:  # 成功
                 response.success = True
                 response.message = "Get quat2rpy successfully"
-                response.output = [float(v) for v in rpy]
+                response.output = [roll, pitch, yaw]  # 直接组装成列表
             else:
                 response.success = False
-                response.message = "Failed to get quat2rpy"
+                response.message = f"Failed to get quat2rpy, ret={ret}"
 
         except Exception as e:
             response.success = False
             response.message = str(e)
-
-            self.get_logger().error(
-                f'handle_get_quat2rpy_service failed: {e}'
-            )
+            self.get_logger().error(f'handle_get_quat2rpy_service failed: {e}')
 
         return response
     
@@ -718,31 +710,25 @@ class TLArmNode(Node):
         # RPY 至少需要 3 个元素
         if len(request.input) < 3:
             response.success = False
-            response.message = "Invalid rpy input"
+            response.message = "Invalid rpy input (need 3 elements)"
             return response
 
         try:
-            # 转 SWIG VectorDouble
-            rpy = tl_interface.VectorDouble()
-            for v in request.input:
-                rpy.append(float(v))
+            rpy_list = list(request.input)
+            ret, qx, qy, qz, qw = tl_interface.get_rpy2quat(self.fd, rpy_list)
+            self.get_logger().info(f"get_rpy2quat ret={ret}, quat=[{qx}, {qy}, {qz}, {qw}]")
 
-            quat = tl_interface.VectorDouble()
-            ret = tl_interface.get_rpy2quat(self.fd, rpy, quat)
-            self.get_logger().info(f"get_rpy2quat ret={ret}, quat={list(quat) if quat else []}")
             if ret == 0:
                 response.success = True
                 response.message = "Get rpy2quat successfully"
-                response.output = [float(v) for v in quat]
-
+                response.output = [qx, qy, qz, qw]  # 直接输出四元数
             else:
                 response.success = False
-                response.message = "Failed to get rpy2quat"
+                response.message = f"Failed to get rpy2quat, ret={ret}"
 
         except Exception as e:
             response.success = False
             response.message = str(e)
-
             self.get_logger().error(f'handle_get_rpy2quat_service failed: {e}')
 
         return response
@@ -756,20 +742,20 @@ class TLArmNode(Node):
         # 检查输入长度
         if len(request.input) < 3:
             response.success = False
-            response.message = "Invalid rpy input"
+            response.message = "Invalid rpy input (need 3 elements)"
             return response
 
         try:
-            # 转成 Python list<double>
-            rpy_input = list(request.input)
-            rot = tl_interface.VectorDouble()
-            ret = tl_interface.get_rpy2r(self.fd, rpy_input, rot)
-            self.get_logger().info(f"get_rpy2r ret={ret}, rot={list(rot)}")
+            rpy_list = list(request.input)
+            result = tl_interface.get_rpy2r(self.fd, rpy_list)
+            ret = result[0]          # 第一个是返回值
+            rot_list = list(result[1:])  # 后面 9 个是旋转矩阵
+            self.get_logger().info(f"get_rpy2r ret={ret}, rot={rot_list}")
 
             if ret == 0:
                 response.success = True
                 response.message = "Get rpy2r successfully"
-                response.output = list(rot)
+                response.output = rot_list  # 直接输出 9 个元素
             else:
                 response.success = False
                 response.message = "Failed to get rpy2r"
@@ -779,7 +765,7 @@ class TLArmNode(Node):
             response.message = str(e)
             self.get_logger().error(f"handle_get_rpy2r_service failed: {e}")
 
-        return response    
+        return response 
 
     def handle_get_tr2r_service(self, request, response):
         if self.fd is None or not self.is_connected_:
@@ -790,20 +776,20 @@ class TLArmNode(Node):
         # 检查输入长度
         if len(request.input) < 16:
             response.success = False
-            response.message = "Invalid tr input"
+            response.message = "Invalid tr input (need 16 elements)"
             return response
 
         try:
-            # 转为 Python list
-            tr_input = list(request.input)
-            rot = tl_interface.VectorDouble()
-            ret = tl_interface.get_tr2r(self.fd, tr_input, rot)
-            self.get_logger().info(f"get_tr2r ret={ret}, rot={list(rot)}")
+            tr_list = list(request.input)
+            result = tl_interface.get_tr2r(self.fd, tr_list)
+            ret = result[0]          # 第一个值是返回状态
+            rot_list = list(result[1:])  # 后面 9 个是旋转矩阵
+            self.get_logger().info(f"get_tr2r ret={ret}, rot={rot_list}")
 
             if ret == 0:
                 response.success = True
                 response.message = "Get tr2r successfully"
-                response.output = list(rot)
+                response.output = rot_list
             else:
                 response.success = False
                 response.message = "Failed to get tr2r"
@@ -828,16 +814,16 @@ class TLArmNode(Node):
             return response
 
         try:
-            # 转为 Python list
-            rot_input = list(request.input)
-            tr_matrix = tl_interface.VectorDouble()
-            ret = tl_interface.get_r2tr(self.fd, rot_input, tr_matrix)
-            self.get_logger().info(f"get_r2tr ret={ret}, tr_matrix={list(tr_matrix)}")
+            r_list = list(request.input)
+            result = tl_interface.get_r2tr(self.fd, r_list)
+            ret = result[0]          # 第一个是状态码
+            tr_list = list(result[1:])  # 后面 16 个是位姿矩阵
+            self.get_logger().info(f"get_r2tr ret={ret}, tr_matrix={tr_list}")
 
             if ret == 0:
                 response.success = True
                 response.message = "Get r2tr successfully"
-                response.output = list(tr_matrix)
+                response.output = tr_list
             else:
                 response.success = False
                 response.message = "Failed to get r2tr"
@@ -962,52 +948,29 @@ class TLArmNode(Node):
 
     def handle_job_insert_movej_topic(self, msg):
 
+        if not self.is_connected_:
+            self.get_logger().warning("[JobInsertMoveJ]: arm is not connected")
+            return
         try:
 
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertMoveJ]: arm is not connected")
-                return
-
+            # 直接从 msg 取参数，不再使用 MoveCmd
             line = msg.line
-            cmd = tl_interface.MoveCmd()
+            cmd = msg.cmd
 
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
+            # 新版函数只需要这 6 个关键参数 + 行号
+            vel = cmd.velocity
+            acc = cmd.acc
+            dec = cmd.dec
+            pl  = cmd.pl
+            pos_name = cmd.target_pos_name  # 直接取点位名
 
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
+            # 日志（和原来保持一致）
+            self.get_logger().info(f"targetPosType={cmd.target_pos_type}")
+            self.get_logger().info(f"targetPosName={pos_name}")
+            self.get_logger().info(f"targetPosValue={list(cmd.target_pos_value)}")
 
-            cmd.coord = msg.cmd.coord
+            ret = tl_interface.job_insert_moveJ(self.fd, line, vel, acc, dec, pl, pos_name)
 
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # 关键修改
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
-                target_pos[i] = float(v)
-            cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
-
-            ret = tl_interface.job_insert_moveJ(self.fd, line, cmd)
             self.get_logger().info(f"[JobInsertMoveJ]: ret={ret}")
 
         except Exception as e:
@@ -1016,56 +979,26 @@ class TLArmNode(Node):
 
     def handle_job_insert_movel_topic(self, msg):
 
+        if not self.is_connected_:
+            self.get_logger().warning("[JobInsertMoveL]: arm is not connected")
+            return
         try:
 
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertMoveL]: arm is not connected")
-                return
-
             line = msg.line
+            cmd = msg.cmd
 
-            cmd = tl_interface.MoveCmd()
+            # 新版函数只需要这 6 个关键参数 + 行号
+            vel = cmd.velocity
+            acc = cmd.acc
+            dec = cmd.dec
+            pl  = cmd.pl
+            pos_name = cmd.target_pos_name  # 直接取点位名
 
-            # target position type
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
+            self.get_logger().info(f"targetPosType={cmd.target_pos_type}")
+            self.get_logger().info(f"targetPosName={pos_name}")
+            self.get_logger().info(f"targetPosValue={list(cmd.target_pos_value)}")
 
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
-
-            # motion parameters
-            cmd.coord = msg.cmd.coord
-
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
-                target_pos[i] = float(v)
-            cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
-
-            # call sdk
-            ret = tl_interface.job_insert_moveL(self.fd, line, cmd)
+            ret = tl_interface.job_insert_moveL(self.fd, line, vel, acc, dec, pl, pos_name)
 
             self.get_logger().info(f"[JobInsertMoveL]: ret={ret}")
 
@@ -1075,56 +1008,25 @@ class TLArmNode(Node):
 
     def handle_job_insert_imove_topic(self, msg):
 
+        if not self.is_connected_:
+            self.get_logger().warning("[JobInsertIMove]: arm is not connected")
+            return
         try:
-
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertIMove]: arm is not connected")
-                return
-
             line = msg.line
+            cmd = msg.cmd
 
-            cmd = tl_interface.MoveCmd()
-
-            # target position type
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
-
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
-
-            # motion parameters
-            cmd.coord = msg.cmd.coord
-
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
-                target_pos[i] = float(v)
-            cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
+            # 新版函数只需要这 6 个关键参数 + 行号
+            vel = cmd.velocity
+            acc = cmd.acc
+            dec = cmd.dec
+            pl  = cmd.pl
+            pos_name = cmd.target_pos_name  # 直接取点位名
+            self.get_logger().info(f"targetPosType={cmd.target_pos_type}")
+            self.get_logger().info(f"targetPosName={pos_name}")
+            self.get_logger().info(f"targetPosValue={list(cmd.target_pos_value)}")
 
             # call sdk
-            ret = tl_interface.job_insert_imove(self.fd, line, cmd)
+            ret = tl_interface.job_insert_imove(self.fd, line, vel, acc, dec, pl, pos_name)
             self.get_logger().info(f"[JobInsertIMove]: ret={ret}")
 
         except Exception as e:
@@ -1133,56 +1035,26 @@ class TLArmNode(Node):
 
     def handle_job_insert_movec_topic(self, msg):
 
+        if not self.is_connected_:
+            self.get_logger().warning("[JobInsertMoveC]: arm is not connected")
+            return
         try:
-
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertMoveC]: arm is not connected")
-                return
-
             line = msg.line
+            cmd = msg.cmd
 
-            cmd = tl_interface.MoveCmd()
+            # 新版函数只需要这 6 个关键参数 + 行号
+            vel = cmd.velocity
+            acc = cmd.acc
+            dec = cmd.dec
+            pl  = cmd.pl
+            pos_name = cmd.target_pos_name  # 直接取点位名
 
-            # target position type
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
-
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
-
-            # motion parameters
-            cmd.coord = msg.cmd.coord
-
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
-                target_pos[i] = float(v)
-            cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
+            self.get_logger().info(f"targetPosType={cmd.target_pos_type}")
+            self.get_logger().info(f"targetPosName={pos_name}")
+            self.get_logger().info(f"targetPosValue={list(cmd.target_pos_value)}")
 
             # call sdk
-            ret = tl_interface.job_insert_moveC(self.fd, line, cmd)
+            ret = tl_interface.job_insert_moveC(self.fd, line, vel, acc, dec, pl, pos_name)
             self.get_logger().info(f"[JobInsertMoveC]: ret={ret}")
 
         except Exception as e:
@@ -2121,7 +1993,7 @@ class TLArmNode(Node):
             return response
 
         try:
-            param = tl_interface.RobotJointParam()
+            param = tl_interface.CRobotJointParam()
             ret = tl_interface.get_robot_joint_param(self.fd, request.id, param)
         except Exception as e:
             response.success = False
@@ -2132,20 +2004,19 @@ class TLArmNode(Node):
             response.success = True
             response.message = "Get robot joint param successfully"
 
-            # ===== 字段逐个映射 =====
-            response.param.reduction_ratio = param.reducRatio
-            response.param.encoder_resolution = param.encoderResolution
-            response.param.pos_sw_limit = param.posSWLimit
-            response.param.neg_sw_limit = param.negSWLimit
-            response.param.rated_rot_speed = param.ratedRotSpeed
-            response.param.rated_derot_speed = param.ratedDeRotSpeed
-            response.param.max_rot_speed = param.maxRotSpeed
-            response.param.max_derot_speed = param.maxDeRotSpeed
-            response.param.rated_vel = param.ratedVel
-            response.param.rated_devel = param.deRatedVel
-            response.param.max_acc = param.maxAcc
-            response.param.max_deacc = param.maxDecel
-            response.param.direction = param.direction
+            response.param.reduction_ratio = float(param.reducRatio)
+            response.param.encoder_resolution = int(param.encoderResolution)  # 必须 int
+            response.param.pos_sw_limit = float(param.posSWLimit)
+            response.param.neg_sw_limit = float(param.negSWLimit)
+            response.param.rated_rot_speed = float(param.ratedRotSpeed)
+            response.param.rated_derot_speed = float(param.deRatedRotSpeed)
+            response.param.max_rot_speed = float(param.maxRotSpeed)
+            response.param.max_derot_speed = float(param.maxDeRotSpeed)
+            response.param.rated_vel = float(param.ratedVel)
+            response.param.rated_devel = float(param.deRatedVel)
+            response.param.max_acc = float(param.maxAcc)
+            response.param.max_dec = float(param.maxDecel)
+            response.param.direction = int(param.direction)  # 必须 int
         else:
             response.success = False
             response.message = "Failed to get robot joint param"
@@ -2699,31 +2570,6 @@ class TLArmNode(Node):
 
         return response
 
-    def handle_tool_hand_calib_service(self, request, response):
-        try:
-            tool_num = int(request.tool_num)
-            point_num = int(request.point_num)
-        except Exception:
-            response.success = False
-            response.message = 'invalid request'
-            return response
-        ok = True
-        if tl_interface is not None and hasattr(tl_interface, 'tool_hand_calib'):
-            try:
-                if self._valid_fd():
-                    try:
-                        ok = tl_interface.tool_hand_calib(self.fd, tool_num, point_num)
-                    except TypeError:
-                        ok = tl_interface.tool_hand_calib(tool_num, point_num)
-                else:
-                    ok = tl_interface.tool_hand_calib(tool_num, point_num)
-            except Exception as e:
-                self.get_logger().error(f'tl_interface.tool_hand_calib failed: {e}')
-                ok = False
-        response.success = bool(ok)
-        response.message = 'ok' if ok else 'failed'
-        return response
-
     # IO / Modbus handlers
     def handle_set_digital_output_service(self, request, response):
         if self.fd is None or not self.is_connected_:
@@ -2795,36 +2641,58 @@ class TLArmNode(Node):
             return response
 
         try:
-            master_param = tl_interface.ModbusMasterParameter()
-            master_param.type = request.master_param.type
-            master_param.startAddress = request.master_param.start_addr
+            master_id = request.master_id
+            master_param = request.master_param
+            start_addr = master_param.start_addr
 
+            # 1. 根据类型设置 Modbus 主站参数（新版接口）
             if master_param.type == "TCP":
-                master_param.TCP.IP = request.master_param.tcp.ip
-                master_param.TCP.port = request.master_param.tcp.port
+                ip = master_param.tcp.ip
+                port = master_param.tcp.port
+
+                # 新版 TCP 接口
+                ret = tl_interface.modbus_set_master_parameter_tcp(
+                    self.fd,
+                    id=master_id,
+                    ip=ip,
+                    port=port,
+                    startAddress=start_addr
+                )
 
             elif master_param.type == "RTU":
-                master_param.RTU.slaveId = request.master_param.rtu.slave_id
-                master_param.RTU.port = request.master_param.rtu.port
-                master_param.RTU.baudrate = request.master_param.rtu.baudrate
-                master_param.RTU.checkBit = request.master_param.rtu.check_bit
-                master_param.RTU.dataBit = request.master_param.rtu.data_bit
-                master_param.RTU.stopBit = request.master_param.rtu.stop_bit
+                slave_id = master_param.rtu.slave_id
+                port = master_param.rtu.port
+                baudrate = master_param.rtu.baudrate
+                check_bit = master_param.rtu.check_bit
+                data_bit = master_param.rtu.data_bit
+                stop_bit = master_param.rtu.stop_bit
+
+                # 新版 RTU 接口
+                ret = tl_interface.modbus_set_master_parameter_rtu(
+                    self.fd,
+                    id=master_id,
+                    slaveId=slave_id,
+                    rtu_port=port,
+                    baudrate=baudrate,
+                    checkBit=check_bit,
+                    dataBit=data_bit,
+                    stopBit=stop_bit,
+                    startAddress=start_addr
+                )
 
             else:
                 response.success = False
                 response.message = "Invalid master type"
                 return response
 
-            ret = tl_interface.modbus_set_master_parameter(self.fd, request.master_id, master_param)
             self.get_logger().info(f"modbus_set_master_parameter ret={ret}")
-
             if ret != 0:
                 response.success = False
                 response.message = "Failed to set master parameter"
                 return response
 
-            ret = tl_interface.modbus_open_master(self.fd, request.master_id)
+            # 2. 打开主站（不变）
+            ret = tl_interface.modbus_open_master(self.fd, master_id)
             self.get_logger().info(f"modbus_open_master ret={ret}")
 
             if ret != 0:
@@ -2832,27 +2700,26 @@ class TLArmNode(Node):
                 response.message = "Failed to open master"
                 return response
 
-            data = tl_interface.VectorInt()
-
-            for v in request.data:
-                data.append(int(v))
-
-            ret = tl_interface.modbus_write_multiple_holding_registers(self.fd, request.master_id, request.addr, data)
-            self.get_logger().info(f"modbus_write ret={ret}")
-            response.success = (ret == 0)
-            response.message = (
-                "Modbus write successfully"
-                if response.success
-                else "Failed to write Modbus"
+            # 3. 批量写保持寄存器（新版接口，直接传 list，无需 VectorInt）
+            ret = tl_interface.modbus_write_multiple_holding_registers(
+                self.fd,
+                id=master_id,
+                address=request.addr,
+                data=list(request.data)
             )
 
-            return response
+            self.get_logger().info(f"modbus_write ret={ret}")
+
+            # 4. 返回结果
+            response.success = (ret == 0)
+            response.message = "Modbus write successfully" if response.success else "Failed to write Modbus"
 
         except Exception as e:
-            self.get_logger().error(f"modbus_write exception: {e}")
             response.success = False
             response.message = str(e)
-            return response
+            self.get_logger().error(f'handle_modbus_write_service failed: {e}')
+
+        return response
 
     def handle_modbus_read_service(self, request, response):
         if self.fd is None or not self.is_connected_:
@@ -2861,66 +2728,87 @@ class TLArmNode(Node):
             return response
 
         try:
-            # 构造 ModbusMasterParameter
-            master_param = tl_interface.ModbusMasterParameter()
-            master_param.type = request.master_param.type
-            master_param.startAddress = request.master_param.start_addr
+            master_id = request.master_id
+            master_param = request.master_param
+            start_addr = master_param.start_addr
 
-            # TCP
+            # 根据类型分别设置参数
             if master_param.type == "TCP":
-                master_param.TCP.IP = (request.master_param.tcp.ip)
-                master_param.TCP.port = (request.master_param.tcp.port)
-            # RTU
+                ip = master_param.tcp.ip
+                port = master_param.tcp.port
+
+                # 新版 TCP 接口
+                ret = tl_interface.modbus_set_master_parameter_tcp(
+                    self.fd,
+                    id=master_id,
+                    ip=ip,
+                    port=port,
+                    startAddress=start_addr
+                )
+
             elif master_param.type == "RTU":
-                master_param.RTU.slaveId = (request.master_param.rtu.slave_id)
-                master_param.RTU.port = (request.master_param.rtu.port)
-                master_param.RTU.baudrate = (request.master_param.rtu.baudrate)
-                master_param.RTU.checkBit = (request.master_param.rtu.check_bit)
-                master_param.RTU.dataBit = (request.master_param.rtu.data_bit)
-                master_param.RTU.stopBit = (request.master_param.rtu.stop_bit)
+                slave_id = master_param.rtu.slave_id
+                port = master_param.rtu.port
+                baudrate = master_param.rtu.baudrate
+                check_bit = master_param.rtu.check_bit
+                data_bit = master_param.rtu.data_bit
+                stop_bit = master_param.rtu.stop_bit
+
+                # 新版 RTU 接口
+                ret = tl_interface.modbus_set_master_parameter_rtu(
+                    self.fd,
+                    id=master_id,
+                    slaveId=slave_id,
+                    rtu_port=port,
+                    baudrate=baudrate,
+                    checkBit=check_bit,
+                    dataBit=data_bit,
+                    stopBit=stop_bit,
+                    startAddress=start_addr
+                )
+
             else:
                 response.success = False
                 response.message = "Invalid master type"
                 return response
 
-
-            # set master parameter
-            ret = tl_interface.modbus_set_master_parameter(self.fd, request.master_id, master_param)
             self.get_logger().info(f"modbus_set_master_parameter ret={ret}")
-
             if ret != 0:
                 response.success = False
-                response.message = ("Failed to set master parameter")
+                response.message = "Failed to set master parameter"
                 return response
 
-            # open master
-            ret = tl_interface.modbus_open_master(self.fd, request.master_id)
+            # 打开主站（不变）
+            ret = tl_interface.modbus_open_master(self.fd, master_id)
             self.get_logger().info(f"modbus_open_master ret={ret}")
-
             if ret != 0:
                 response.success = False
-                response.message = ("Failed to open master")
+                response.message = "Failed to open master"
                 return response
 
-            # read holding registers
-            data = tl_interface.VectorInt()
-            ret = tl_interface.modbus_read_holding_registers(self.fd, request.master_id, request.addr, request.quantity, data)
+            # 新版读寄存器（直接返回 list，无 VectorInt）
+            data_list = tl_interface.modbus_read_holding_registers(
+                self.fd,
+                id=master_id,
+                address=request.addr,
+                quantity=request.quantity
+            )
 
-            self.get_logger().info(f"modbus_read_holding_registers ret={ret}")
-            response.success = (ret == 0)
-            if response.success:
-                response.message = ("Modbus read successfully")
-                response.data = [
-                    data[i]
-                    for i in range(data.size())
-                ]
+            self.get_logger().info(f"modbus_read_holding_registers data={data_list}")
+
+            if data_list is not None and len(data_list) == request.quantity:
+                response.success = True
+                response.message = "Modbus read successfully"
+                response.data = data_list
             else:
-                response.message = ("Failed to read Modbus")
+                response.success = False
+                response.message = "Failed to read Modbus"
 
         except Exception as e:
             response.success = False
             response.message = str(e)
             self.get_logger().error(f'handle_modbus_read_service failed: {e}')
+
         return response
 
     def publish_arm_state(self):
@@ -3034,6 +2922,11 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        # Ctrl+C 终止时给机械臂下电
+        try:
+            node.power_off()
+        except BaseException:
+            pass
         try:
             node.destroy_node()
         except Exception:
