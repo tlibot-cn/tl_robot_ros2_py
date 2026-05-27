@@ -48,7 +48,21 @@ ros2 launch tl_description tl_description.launch.py arm_type:=tcb605 use_sim:=fa
 ## tl_description功能包架构说明
 ## 功能包文件总览
 ```
-├── CMakeLists.txt                           # 编译规则文件
+├── config                                   # 关节名称配置文件
+│   ├── joint_names_tl_tcb605.yaml
+│   ├── joint_names_tl_tcb605f.yaml
+│   ├── joint_names_tl_tcb605l.yaml
+│   ├── joint_names_tl_tcb605lv.yaml
+│   ├── joint_names_tl_tcb605v.yaml
+│   ├── joint_names_tl_tcb610.yaml
+│   ├── joint_names_tl_tcb610v.yaml
+│   ├── joint_names_tl_tcb705.yaml
+│   ├── joint_names_tl_tcb705f.yaml
+│   ├── joint_names_tl_tcb705l.yaml
+│   ├── joint_names_tl_tcb705lv.yaml
+│   ├── joint_names_tl_tcb705v.yaml
+│   ├── joint_names_tl_tcb710.yaml
+│   └── joint_names_tl_tcb710v.yaml
 ├── doc                                      # 辅助文档、图片文件
 │   └── tl_description.png
 ├── launch                                   # 启动文件
@@ -181,6 +195,8 @@ ros2 launch tl_description tl_description.launch.py arm_type:=tcb605 use_sim:=fa
 │       └── link7.STL
 ├── package.xml                              # 依赖说明文件
 ├── README.md                                # 说明文档
+├── resource                                 # 资源标记文件
+│   └── tl_description
 ├── rviz                                     # rviz2配置文件
 │   ├── tl_tcb605f.rviz
 │   ├── tl_tcb605l.rviz
@@ -196,6 +212,8 @@ ros2 launch tl_description tl_description.launch.py arm_type:=tcb605 use_sim:=fa
 │   ├── tl_tcb705v.rviz
 │   ├── tl_tcb710.rviz
 │   └── tl_tcb710v.rviz
+├── setup.cfg                                # Python 包配置文件
+├── setup.py                                 # Python 编译规则文件
 └── urdf                                     # urdf描述文件
     ├── tl_tcb605.csv
     ├── tl_tcb605.urdf                       # tcb605机械臂urdf描述文件
