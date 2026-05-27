@@ -55,7 +55,6 @@ tl_driver:
 ## tl_driver功能包架构说明
 ### 功能包文件总览
 ```
-├── CMakeLists.txt                 # 编译规则文件
 ├── config                         # 机械臂配置文件
 │   ├── tl_tcb605_config.yaml
 │   ├── tl_tcb605f_config.yaml
@@ -73,65 +72,42 @@ tl_driver:
 │   └── tl_tcb710v_config.yaml
 ├── doc                            # 相关文档与图片
 │   ├── tl_driver1.png
-│   └── tl_driver2.png
-├── include                        # 头文件
-│   └── tl_driver
-│       └── tl_driver.h
+│   ├── tl_driver2.png
+│   ├── tl_driver3.png
+│   ├── tl_driver4.png
+│   ├── tl_driver服务与话题说明书.md
 ├── launch                         # 启动文件
-│   └── tl_driver.launch.py
-├── lib                            # API依赖库
-│   ├── include
-│   │   ├── c
-│   │   │   ├── interface
-│   │   │   │   ├── nrc_c_craft_pallet.h
-│   │   │   │   ├── nrc_c_interface.h
-│   │   │   │   ├── nrc_c_io.h
-│   │   │   │   ├── nrc_c_job_operate.h
-│   │   │   │   └── nrc_c_queue_operate.h
-│   │   │   └── parameter
-│   │   │       ├── nrc_define.h
-│   │   │       └── nrc_interface_parameter.h
-│   │   └── cpp
-│   │       ├── interface
-│   │       │   ├── nrc_api.h
-│   │       │   ├── nrc_craft_conveyor_belt_track.h
-│   │       │   ├── nrc_craft_laser_cutting.h
-│   │       │   ├── nrc_craft_pallet.h
-│   │       │   ├── nrc_craft_track.h
-│   │       │   ├── nrc_craft_vision.h
-│   │       │   ├── nrc_craft_weld.h
-│   │       │   ├── nrc_dual_arm.h
-│   │       │   ├── nrc_interface.h
-│   │       │   ├── nrc_io.h
-│   │       │   ├── nrc_job_operate.h
-│   │       │   ├── nrc_modbus.h
-│   │       │   ├── nrc_queue_operate.h
-│   │       │   ├── nrc_track.h
-│   │       │   └── nrc_vfd_ctr.h
-│   │       └── parameter
-│   │           ├── nrc_craft_conveyor_belt_track_parameter.h
-│   │           ├── nrc_craft_laser_cutting_parameter.h
-│   │           ├── nrc_craft_track_parameter.h
-│   │           ├── nrc_craft_vision_parameter.h
-│   │           ├── nrc_craft_weld_parameter.h
-│   │           ├── nrc_define.h
-│   │           ├── nrc_interface_parameter.h
-│   │           ├── nrc_io_parameter.h
-│   │           ├── nrc_modbus_parameter.h
-│   │           └── nrc_parameter.h
-│   ├── _nrc_host.so
-│   └── nrc_interface.py
-├── package.xml
-├── README.md
-├── README_update.md             
-├── src                        # 驱动代码源头文件
-│   └── tl_driver.cpp
-└── test                       # 测试脚本
+│   ├── tl_driver.launch.py        # 主启动文件，通过 arm_type 参数选择型号
+│   ├── tl_tcb605_driver.launch.py
+│   ├── tl_tcb605f_driver.launch.py
+│   ├── ...
+│   └── tl_tcb710v_driver.launch.py
+├── lib                            # API 依赖库（SWIG 封装）
+│   └── x86
+│       ├── _tl_host.so            # 本地 C 扩展库
+│       └── tl_interface.py        # Python SWIG 接口
+├── package.xml                    # 依赖说明文件
+├── README.md                      # 说明文档
+├── resource                       # 资源标记文件
+│   └── tl_driver
+├── setup.cfg                      # Python 包配置文件
+├── setup.py                       # Python 编译规则文件
+├── src                            # Python 驱动源代码
+│   └── tl_driver
+│       ├── __init__.py
+│       ├── lib
+│       │   ├── __init__.py
+│       │   ├── _tl_host.so        # 构建时从 lib/x86/ 复制
+│       │   └── tl_interface.py    # 构建时从 lib/x86/ 复制
+│       └── tl_driver_node.py      # 驱动主节点
+└── test                           # 测试脚本
+    ├── run_unit_tests.py
     ├── test_job_insert_moveJ.sh
     ├── test_job_insert_moveL.sh
     ├── test_moveJ.sh
     ├── test_moveL.sh
-    └── test_publisher.py
+    ├── test_publisher.py
+    └── test_topics_and_services.py
 ```
 ## tl_driver话题与服务说明
 rm_driver的服务和话题较多，可以通过如下指令了解其话题信息。
