@@ -6,7 +6,7 @@ import shutil
 package_name = 'tl_driver'
 
 # 将 x86 版 TL 库复制到 src/tl_driver/lib/ 供 package_data 打包
-pkg_lib_dir = os.path.join('src', 'tl_driver', 'lib')
+pkg_lib_dir = os.path.join('tl_driver', 'lib')
 os.makedirs(pkg_lib_dir, exist_ok=True)
 
 for f in ('_tl_host.so', 'tl_interface.py'):
@@ -31,7 +31,7 @@ setup(
     name=package_name,
     version='1.0.0',
     packages=['tl_driver', 'tl_driver.lib'],
-    package_dir={'': 'src'},
+    package_dir={'': '.'},
     package_data={'tl_driver.lib': ['_tl_host.*', 'tl_interface.py']},
     data_files=data_files,
     include_package_data=True,
