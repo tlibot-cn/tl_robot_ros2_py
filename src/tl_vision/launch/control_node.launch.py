@@ -11,7 +11,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
     pkg_vision = FindPackageShare('tl_vision')
-    pkg_driver = FindPackageShare('tl_driver_cpp')
+    pkg_driver = FindPackageShare('tl_driver')
 
     arm_type = LaunchConfiguration('arm_type')
 

@@ -39,7 +39,6 @@ ros2 launch tl_bringup tl_tcb605_bringup.launch.py
 ### 功能包文件总览
 当前tl_bringup功能包的文件构成如下:
 ```
-├── CMakeLists.txt                         # 编译规则文件
 ├── doc                                    # 辅助文档、图片文件
 │   └── tl_bringup.png
 ├── launch                                 # 启动文件
@@ -58,7 +57,11 @@ ros2 launch tl_bringup tl_tcb605_bringup.launch.py
 │   ├── tl_tcb710_bringup.launch.py        # tcb710启动文件
 │   └── tl_tcb710v_bringup.launch.py       # tcb710v启动文件
 ├── package.xml                            # 依赖说明文件
-└── README.md                              # 说明文档
+├── README.md                              # 说明文档
+├── resource                               # 资源标记文件
+│   └── tl_bringup
+├── setup.cfg                              # Python 包配置文件
+└── setup.py                               # Python 编译规则文件
 ```
 ## tl_bringup功能包话题说明
 该功能包当前并没有本身的话题，主要为调用其他功能包的话题实现。
