@@ -75,31 +75,29 @@ tl_driver:
 │   ├── tl_driver2.png
 │   ├── tl_driver3.png
 │   ├── tl_driver4.png
-│   ├── tl_driver服务与话题说明书.md
+│   └── tl_driver服务与话题说明书.md
 ├── launch                         # 启动文件
 │   ├── tl_driver.launch.py        # 主启动文件，通过 arm_type 参数选择型号
 │   ├── tl_tcb605_driver.launch.py
 │   ├── tl_tcb605f_driver.launch.py
 │   ├── ...
 │   └── tl_tcb710v_driver.launch.py
-├── lib                            # API 依赖库（SWIG 封装）
-│   └── x86
-│       ├── _tl_host.so            # 本地 C 扩展库
-│       └── tl_interface.py        # Python SWIG 接口
+├── lib                            # API 依赖库源码（构建时复制到 tl_driver/lib/）
+│   └── x86                        # x86 架构 SWIG 封装库
+│       ├── _tl_host.so            #   底层 C 扩展（TCP 通信、机械臂控制）
+│       └── tl_interface.py        #   Python SWIG 接口
 ├── package.xml                    # 依赖说明文件
 ├── README.md                      # 说明文档
 ├── resource                       # 资源标记文件
 │   └── tl_driver
 ├── setup.cfg                      # Python 包配置文件
 ├── setup.py                       # Python 编译规则文件
-├── src                            # Python 驱动源代码
-│   └── tl_driver
-│       ├── __init__.py
-│       ├── lib
-│       │   ├── __init__.py
-│       │   ├── _tl_host.so        # 构建时从 lib/x86/ 复制
-│       │   └── tl_interface.py    # 构建时从 lib/x86/ 复制
-│       └── tl_driver_node.py      # 驱动主节点
+├── tl_driver                      # Python 驱动源代码
+│   ├── __init__.py
+│   ├── lib/                       # 构建时从 lib/x86/ 复制
+│   │   ├── _tl_host.so
+│   │   └── tl_interface.py
+│   └── tl_driver_node.py          # 驱动主节点
 └── test                           # 测试脚本
     ├── run_unit_tests.py
     ├── test_job_insert_moveJ.sh
