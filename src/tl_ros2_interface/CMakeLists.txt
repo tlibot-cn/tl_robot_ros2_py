@@ -53,6 +53,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetDHParam.srv"
   "srv/GetAllJobFileName.srv"
   "srv/JobRun.srv"
+  "srv/JobInsertMove.srv"
   "srv/SetGlobalPos.srv"
   "srv/GetGlobalPos.srv"
   "srv/OpenServoJ.srv"

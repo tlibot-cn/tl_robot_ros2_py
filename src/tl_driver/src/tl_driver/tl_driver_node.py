@@ -96,6 +96,11 @@ class TLArmNode(Node):
 
         self.get_logger().info(f'arm_type={self.arm_type_}, ndof={self.ndof_}')
 
+        # callback groups for multi-threaded executor (matching C++ node)
+        self.service_group_ = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
+        self.topic_group_ = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
+        self.timer_group_ = rclpy.callback_groups.ReentrantCallbackGroup()
+
         # publishers
         self.joint_state_pub = self.create_publisher(JointState, '/joint_states', 10)
         # create tcp_pose publisher if message available
@@ -115,108 +120,113 @@ class TLArmNode(Node):
             self._running_status_fallback = True
 
         # services
-        self.create_service(Trigger, '/tl_driver/connect_arm', self.handle_connect_service)
-        self.create_service(Trigger, '/tl_driver/disconnect_arm', self.handle_disconnect_service)
-        self.create_service(Trigger, '/tl_driver/power_on', self.handle_poweron_service)
-        self.create_service(Trigger, '/tl_driver/power_off', self.handle_poweroff_service)
-        self.create_service(Trigger, '/tl_driver/clear_error', self.handle_clear_error_service)
-        self.create_service(Trigger, '/tl_driver/get_controller_id', self.handle_get_controller_id_service)
+        self.create_service(Trigger, '/tl_driver/connect_arm', self.handle_connect_service, callback_group=self.service_group_)
+        self.create_service(Trigger, '/tl_driver/disconnect_arm', self.handle_disconnect_service, callback_group=self.service_group_)
+        self.create_service(Trigger, '/tl_driver/power_on', self.handle_poweron_service, callback_group=self.service_group_)
+        self.create_service(Trigger, '/tl_driver/power_off', self.handle_poweroff_service, callback_group=self.service_group_)
+        self.create_service(Trigger, '/tl_driver/clear_error', self.handle_clear_error_service, callback_group=self.service_group_)
+        self.create_service(Trigger, '/tl_driver/get_controller_id', self.handle_get_controller_id_service, callback_group=self.service_group_)
 
         # typed service from interface package
         try:
-            self.create_service(srvs.SetSpeed, '/tl_driver/set_speed', self.handle_set_speed_service)
-            self.create_service(srvs.GetSpeed,'/tl_driver/get_speed', self.handle_get_speed_service)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_quat2rpy', self.handle_get_quat2rpy_service)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_rpy2quat', self.handle_get_rpy2quat_service)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_rpy2r', self.handle_get_rpy2r_service)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_tr2r', self.handle_get_tr2r_service)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_r2tr', self.handle_get_r2tr_service)
-            self.create_service(srvs.SetControllerIP, '/tl_driver/set_controller_ip', self.handle_set_controller_ip_service)
+            self.create_service(srvs.SetSpeed, '/tl_driver/set_speed', self.handle_set_speed_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetSpeed,'/tl_driver/get_speed', self.handle_get_speed_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetPosTransform, '/tl_driver/get_quat2rpy', self.handle_get_quat2rpy_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetPosTransform, '/tl_driver/get_rpy2quat', self.handle_get_rpy2quat_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetPosTransform, '/tl_driver/get_rpy2r', self.handle_get_rpy2r_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetPosTransform, '/tl_driver/get_tr2r', self.handle_get_tr2r_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetPosTransform, '/tl_driver/get_r2tr', self.handle_get_r2tr_service, callback_group=self.service_group_)
+            self.create_service(srvs.SetControllerIP, '/tl_driver/set_controller_ip', self.handle_set_controller_ip_service, callback_group=self.service_group_)
             
         except Exception:
             self.get_logger().warning('SetSpeed service type not available; skipping')
 
         # jogging & drag services
         try:
-            self.create_service(srvs.Jogging, '/tl_driver/start_jogging', self.handle_start_jogging_service)
-            self.create_service(srvs.Jogging, '/tl_driver/stop_jogging', self.handle_stop_jogging_service)
-            self.create_service(srvs.GetRobotState, '/tl_driver/get_robot_state', self.handle_get_robot_state_service)
-            self.create_service(Trigger, '/tl_driver/get_library_version', self.handle_get_library_version_service)
-            self.create_service(srvs.GetRobotJointParam, '/tl_driver/get_robot_joint_param', self.handle_get_robot_joint_param_service)
-            self.create_service(srvs.SetRobotJointParam, '/tl_driver/set_robot_joint_param', self.handle_set_robot_joint_param_service)
-            self.create_service(Trigger, '/tl_driver/get_drag_status', self.handle_get_drag_status_service)
+            self.create_service(srvs.Jogging, '/tl_driver/start_jogging', self.handle_start_jogging_service, callback_group=self.service_group_)
+            self.create_service(srvs.Jogging, '/tl_driver/stop_jogging', self.handle_stop_jogging_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetRobotState, '/tl_driver/get_robot_state', self.handle_get_robot_state_service, callback_group=self.service_group_)
+            self.create_service(Trigger, '/tl_driver/get_library_version', self.handle_get_library_version_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetRobotJointParam, '/tl_driver/get_robot_joint_param', self.handle_get_robot_joint_param_service, callback_group=self.service_group_)
+            self.create_service(srvs.SetRobotJointParam, '/tl_driver/set_robot_joint_param', self.handle_set_robot_joint_param_service, callback_group=self.service_group_)
+            self.create_service(Trigger, '/tl_driver/get_drag_status', self.handle_get_drag_status_service, callback_group=self.service_group_)
 
         except Exception:
             self.get_logger().warning('Jogging/Drag service types not available; skipping')
         
         # system_status
         try:
-            self.create_service(srvs.GetJointTemperature, '/tl_driver/get_joint_temperature', self.handle_get_joint_temperature_service)
-            self.create_service(srvs.GetJointVoltage, '/tl_driver/get_joint_voltage', self.handle_get_joint_voltage_service)
-            self.create_service(srvs.GetMotorCurrent, '/tl_driver/get_motor_current', self.handle_get_motor_current_service)
-            self.create_service(srvs.GetJointSoftwareVersion, '/tl_driver/get_joint_software_version', self.handle_get_joint_software_version_service)
-            self.create_service(Trigger, '/tl_driver/get_nexmotion_lib_version', self.handle_get_nexmotion_lib_version_service)
-            self.create_service(srvs.RestoreDefaultDHParam, '/tl_driver/restore_default_dh_param', self.handle_restore_default_dh_param_service)
-            self.create_service(Trigger, '/tl_driver/set_default_cartesian_param', self.handle_set_default_cartesian_param_service)
-            self.create_service(srvs.LogDownload, '/tl_driver/log_download', self.handle_log_download_service)
-            self.create_service(srvs.SetDragMode, '/tl_driver/set_drag_mode', self.handle_set_drag_mode_service)
+            self.create_service(srvs.GetJointTemperature, '/tl_driver/get_joint_temperature', self.handle_get_joint_temperature_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetJointVoltage, '/tl_driver/get_joint_voltage', self.handle_get_joint_voltage_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetMotorCurrent, '/tl_driver/get_motor_current', self.handle_get_motor_current_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetJointSoftwareVersion, '/tl_driver/get_joint_software_version', self.handle_get_joint_software_version_service, callback_group=self.service_group_)
+            self.create_service(Trigger, '/tl_driver/get_nexmotion_lib_version', self.handle_get_nexmotion_lib_version_service, callback_group=self.service_group_)
+            self.create_service(srvs.RestoreDefaultDHParam, '/tl_driver/restore_default_dh_param', self.handle_restore_default_dh_param_service, callback_group=self.service_group_)
+            self.create_service(Trigger, '/tl_driver/set_default_cartesian_param', self.handle_set_default_cartesian_param_service, callback_group=self.service_group_)
+            self.create_service(srvs.LogDownload, '/tl_driver/log_download', self.handle_log_download_service, callback_group=self.service_group_)
+            self.create_service(srvs.SetDragMode, '/tl_driver/set_drag_mode', self.handle_set_drag_mode_service, callback_group=self.service_group_)
 
         except Exception:
             self.get_logger().warning('system_status service types not available; skipping')
 
         # queue services
         try:
-            self.create_service(srvs.QueueMotionSetStatus, '/tl_driver/queue_motion_set_status', self.handle_queue_motion_set_status_service)
-            self.create_service(srvs.QueueMotionMoveJ, '/tl_driver/queue_motion_movej', self.handle_queue_motion_movej_service)
-            self.create_service(Trigger, '/tl_driver/queue_motion_stop', self.handle_queue_motion_stop_service)
+            self.create_service(srvs.QueueMotionSetStatus, '/tl_driver/queue_motion_set_status', self.handle_queue_motion_set_status_service, callback_group=self.service_group_)
+            self.create_service(srvs.QueueMotionMoveJ, '/tl_driver/queue_motion_movej', self.handle_queue_motion_movej_service, callback_group=self.service_group_)
+            self.create_service(Trigger, '/tl_driver/queue_motion_stop', self.handle_queue_motion_stop_service, callback_group=self.service_group_)
         except Exception:
             self.get_logger().warning('Queue motion service types not available; skipping')
 
         # tool / coordinate services and IO/Modbus
         try:
-            self.create_service(srvs.SetToolParam, '/tl_driver/set_tool_param', self.handle_set_tool_param_service)
-            self.create_service(srvs.SetUserCoord, '/tl_driver/set_user_coord', self.handle_set_user_coord_service)
-            self.create_service(srvs.SetAxisZeroPos, '/tl_driver/set_axis_zero_pos', self.handle_set_axis_zero_pos_service)
-            self.create_service(srvs.SetCurrentCoord, '/tl_driver/set_current_coord', self.handle_set_current_coord_service)
-            self.create_service(srvs.GetCoordNum, '/tl_driver/get_coord_num', self.handle_get_coord_num_service)
-            self.create_service(srvs.ToolHandCalib, '/tl_driver/tool_hand_calib', self.handle_tool_hand_calib_service)
-
+            self.create_service(srvs.SetToolParam, '/tl_driver/set_tool_param', self.handle_set_tool_param_service, callback_group=self.service_group_)
+            self.create_service(srvs.SetUserCoord, '/tl_driver/set_user_coord', self.handle_set_user_coord_service, callback_group=self.service_group_)
+            self.create_service(srvs.SetAxisZeroPos, '/tl_driver/set_axis_zero_pos', self.handle_set_axis_zero_pos_service, callback_group=self.service_group_)
+            self.create_service(srvs.SetCurrentCoord, '/tl_driver/set_current_coord', self.handle_set_current_coord_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetCoordNum, '/tl_driver/get_coord_num', self.handle_get_coord_num_service, callback_group=self.service_group_)
+        
             # additional services mirroring C++ node
-            self.create_service(srvs.GetAllJobFileName, '/tl_driver/get_all_job_filename', self.handle_get_all_job_filename_service)
-            self.create_service(srvs.JobRun, '/tl_driver/job_run', self.handle_job_run_service)
+            self.create_service(srvs.GetAllJobFileName, '/tl_driver/get_all_job_filename', self.handle_get_all_job_filename_service, callback_group=self.service_group_)
+            self.create_service(srvs.JobRun, '/tl_driver/job_run', self.handle_job_run_service, callback_group=self.service_group_)
             # job delete
-            self.create_service(srvs.JobRun, '/tl_driver/job_delete', self.handle_job_delete_service)
+            self.create_service(srvs.JobRun, '/tl_driver/job_delete', self.handle_job_delete_service, callback_group=self.service_group_)
+            # job insert (matching C++: changed from topic to service)
+            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_moveJ', self.handle_job_insert_movej_service, callback_group=self.service_group_)
+            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_moveL', self.handle_job_insert_movel_service, callback_group=self.service_group_)
+            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_iMove', self.handle_job_insert_imove_service, callback_group=self.service_group_)
+            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_imove', self.handle_job_insert_imove_service, callback_group=self.service_group_)
+            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_moveC', self.handle_job_insert_movec_service, callback_group=self.service_group_)
             # set/get global pos, coord transform, reachable checks
-            self.create_service(srvs.SetGlobalPos, '/tl_driver/set_global_pos', self.handle_set_global_pos_service)
-            self.create_service(srvs.GetGlobalPos, '/tl_driver/get_global_pos', self.handle_get_global_pos_service)
+            self.create_service(srvs.SetGlobalPos, '/tl_driver/set_global_pos', self.handle_set_global_pos_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetGlobalPos, '/tl_driver/get_global_pos', self.handle_get_global_pos_service, callback_group=self.service_group_)
             try:
-                self.create_service(srvs.CoordTransform, '/tl_driver/coord_transform', self.handle_coord_transform_service)
+                self.create_service(srvs.CoordTransform, '/tl_driver/coord_transform', self.handle_coord_transform_service, callback_group=self.service_group_)
             except Exception:
                 # coord transform may not have SWIG mapping
                 pass
-            self.create_service(srvs.GetPosReachable, '/tl_driver/get_pos_reachable', self.handle_get_pos_reachable_service)
-            self.create_service(srvs.GetDHParam, '/tl_driver/get_dh_param', self.handle_get_dh_param_service)
-            self.create_service(srvs.SetDHParam, '/tl_driver/set_dh_param', self.handle_set_dh_param_service)
+            self.create_service(srvs.GetPosReachable, '/tl_driver/get_pos_reachable', self.handle_get_pos_reachable_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetDHParam, '/tl_driver/get_dh_param', self.handle_get_dh_param_service, callback_group=self.service_group_)
+            self.create_service(srvs.SetDHParam, '/tl_driver/set_dh_param', self.handle_set_dh_param_service, callback_group=self.service_group_)
 
             # set current mode and servoj close
             try:
-                self.create_service(srvs.SetCurrentMode, '/tl_driver/set_current_mode', self.handle_set_current_mode_service)
+                self.create_service(srvs.SetCurrentMode, '/tl_driver/set_current_mode', self.handle_set_current_mode_service, callback_group=self.service_group_)
             except Exception:
                 pass
-            self.create_service(Trigger, '/tl_driver/close_servoj', self.handle_close_servoj_service)
+            self.create_service(Trigger, '/tl_driver/close_servoj', self.handle_close_servoj_service, callback_group=self.service_group_)
 
-            self.create_service(srvs.SetDigitalOutput, '/tl_driver/set_digital_output', self.handle_set_digital_output_service)
-            self.create_service(srvs.GetDigitalInputOutput, '/tl_driver/get_digital_input_output', self.handle_get_digital_input_output_service)
-            self.create_service(srvs.ModbusWrite, '/tl_driver/modbus_write', self.handle_modbus_write_service)
-            self.create_service(srvs.ModbusRead, '/tl_driver/modbus_read', self.handle_modbus_read_service)
+            self.create_service(srvs.SetDigitalOutput, '/tl_driver/set_digital_output', self.handle_set_digital_output_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetDigitalInputOutput, '/tl_driver/get_digital_input_output', self.handle_get_digital_input_output_service, callback_group=self.service_group_)
+            self.create_service(srvs.ModbusWrite, '/tl_driver/modbus_write', self.handle_modbus_write_service, callback_group=self.service_group_)
+            self.create_service(srvs.ModbusRead, '/tl_driver/modbus_read', self.handle_modbus_read_service, callback_group=self.service_group_)
             # track/trajectory
             try:
-                self.create_service(srvs.TrackSave, '/tl_driver/track_save', self.handle_track_save_service)
-                self.create_service(srvs.TrackPlayback, '/tl_driver/track_playback', self.handle_track_playback_service)
+                self.create_service(srvs.TrackSave, '/tl_driver/track_save', self.handle_track_save_service, callback_group=self.service_group_)
+                self.create_service(srvs.TrackPlayback, '/tl_driver/track_playback', self.handle_track_playback_service, callback_group=self.service_group_)
             except Exception:
                 pass
             try:
-                self.create_service(srvs.OpenServoJ, '/tl_driver/open_servoj', self.handle_open_servoj_service)
+                self.create_service(srvs.OpenServoJ, '/tl_driver/open_servoj', self.handle_open_servoj_service, callback_group=self.service_group_)
             except Exception:
                 pass
         except Exception:
@@ -228,51 +238,23 @@ class TLArmNode(Node):
                 msgs.MoveCommand,
                 '/tl_driver/moveJ',
                 self.handle_movej_topic,
-                10)
-
-            self.job_insert_movej_sub = self.create_subscription(
-                msgs.JobInsertMove,
-                '/tl_driver/job_insert_moveJ',
-                self.handle_job_insert_movej_topic,
-                10)
+                10,
+                callback_group=self.topic_group_)
 
             self.movel_sub = self.create_subscription(
                 msgs.MoveCommand,
                 '/tl_driver/moveL',
                 self.handle_movel_topic,
-                10)
-
-            self.job_insert_movel_sub = self.create_subscription(
-                msgs.JobInsertMove,
-                '/tl_driver/job_insert_moveL',
-                self.handle_job_insert_movel_topic,
-                10)
-            
-            self.job_insert_imove_sub = self.create_subscription(
-                msgs.JobInsertMove,
-                '/tl_driver/job_insert_iMove',
-                self.handle_job_insert_imove_topic,
-                10
-            )
-            self.job_insert_movec_sub = self.create_subscription(
-                msgs.JobInsertMove,
-                '/tl_driver/job_insert_moveC',
-                self.handle_job_insert_movec_topic,
-                10
-            )
-            self.create_subscription(
-                msgs.JobInsertMove,
-                '/tl_driver/job_insert_imove',
-                self.handle_job_insert_imove_topic,
-                10
-            )
+                10,
+                callback_group=self.topic_group_)
             # set_servoj position topic (matches C++ node)
             try:
                 self.set_servoj_pos_sub = self.create_subscription(
                     std_msgs.Float64MultiArray,
                     '/tl_driver/set_servoj_pos',
                     self.handle_set_servoj_pos_topic,
-                    10)
+                    10,
+                    callback_group=self.topic_group_)
             except Exception:
                 self.get_logger().warning('set_servoj_pos message type not available; skipping')
         except Exception:
@@ -283,7 +265,7 @@ class TLArmNode(Node):
         # timer for periodic state publish
         self.publish_rate = 10.0
         period = 1.0 / float(self.publish_rate)
-        self.create_timer(period, self.publish_arm_state)
+        self.create_timer(period, self.publish_arm_state, callback_group=self.timer_group_)
 
         self.get_logger().info('tl_driver (python) node started')
 
@@ -299,10 +281,9 @@ class TLArmNode(Node):
         self.msg_id = -1
         self.msg = ""
 
-        # start async connect attempt to mimic C++ behavior (log attempts)
+        # synchronous connect + power_on (matching C++ init() behavior)
         try:
-            t = threading.Thread(target=self._startup_connect, daemon=True)
-            t.start()
+            self._startup_connect()
         except Exception:
             pass
 
@@ -405,20 +386,20 @@ class TLArmNode(Node):
             self.is_connected_ = True
 
             # 注册机器人状态回调（必须connect成功后）
-            try:
-                tl_interface.robot_state_callback(
-                    self.fd_aux,
-                    self._robot_state_callback
-                )
+            # try:
+            #     tl_interface.robot_state_callback(
+            #         self.fd_aux,
+            #         self._robot_state_callback
+            #     )
 
-                self.get_logger().info(
-                    f'robot_state_callback registered, fd_aux={self.fd_aux}'
-                )
+            #     self.get_logger().info(
+            #         f'robot_state_callback registered, fd_aux={self.fd_aux}'
+            #     )
 
-            except Exception as e:
-                self.get_logger().error(
-                    f'robot_state_callback failed: {e}'
-                )
+            # except Exception as e:
+            #     self.get_logger().error(
+            #         f'robot_state_callback failed: {e}'
+            #     )
 
             # register receive callbacks if available
             try:
@@ -1030,234 +1011,185 @@ class TLArmNode(Node):
         except Exception as e:
             self.get_logger().error(f"[MoveL] error: {e}")
 
-    def handle_job_insert_movej_topic(self, msg):
+    def handle_job_insert_movej_service(self, request, response):
+        if not self.is_connected_:
+            response.success = False
+            response.message = "Arm is not connected"
+            return response
 
         try:
-
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertMoveJ]: arm is not connected")
-                return
-
-            line = msg.line
+            line = request.line
             cmd = tl_interface.MoveCmd()
 
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
+            # matching C++ style: hardcode targetPosType/Name
+            cmd.targetPosType = tl_interface.PosType_data
+            cmd.targetPosName = ""
 
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
+            cmd.coord = request.cmd.coord
+            cmd.velocity = request.cmd.velocity
+            cmd.velocitySync = request.cmd.velocity_sync
+            cmd.acc = request.cmd.acc
+            cmd.dec = request.cmd.dec
+            cmd.pl = request.cmd.pl
+            cmd.time = request.cmd.time
+            cmd.toolNum = request.cmd.tool_num
+            cmd.userNum = request.cmd.user_num
+            cmd.posidtype = request.cmd.posidtype
+            cmd.configuration = request.cmd.configuration
+            cmd.spin = request.cmd.spin
+            cmd.parasync = request.cmd.para_sync
 
-            cmd.coord = msg.cmd.coord
-
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # 关键修改
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
+            target_pos = tl_interface.VectorDouble(len(request.cmd.target_pos_value))
+            for i, v in enumerate(request.cmd.target_pos_value):
                 target_pos[i] = float(v)
             cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
             ret = tl_interface.job_insert_moveJ(self.fd, line, cmd)
+            response.success = (ret == 0)
+            response.message = "Job insert movej successfully" if response.success else "Failed to insert job movej"
             self.get_logger().info(f"[JobInsertMoveJ]: ret={ret}")
 
         except Exception as e:
+            response.success = False
+            response.message = str(e)
+            self.get_logger().error(f"handle_job_insert_movej_service failed: {e}")
 
-            self.get_logger().error(f"handle_job_insert_movej_topic failed: {e}")
+        return response
 
-    def handle_job_insert_movel_topic(self, msg):
+    def handle_job_insert_movel_service(self, request, response):
+        if not self.is_connected_:
+            response.success = False
+            response.message = "Arm is not connected"
+            return response
 
         try:
-
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertMoveL]: arm is not connected")
-                return
-
-            line = msg.line
-
+            line = request.line
             cmd = tl_interface.MoveCmd()
 
-            # target position type
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
+            # matching C++ style: hardcode targetPosType/Name
+            cmd.targetPosType = tl_interface.PosType_data
+            cmd.targetPosName = ""
 
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
+            cmd.coord = request.cmd.coord
+            cmd.velocity = request.cmd.velocity
+            cmd.velocitySync = request.cmd.velocity_sync
+            cmd.acc = request.cmd.acc
+            cmd.dec = request.cmd.dec
+            cmd.pl = request.cmd.pl
+            cmd.time = request.cmd.time
+            cmd.toolNum = request.cmd.tool_num
+            cmd.userNum = request.cmd.user_num
+            cmd.posidtype = request.cmd.posidtype
+            cmd.configuration = request.cmd.configuration
+            cmd.spin = request.cmd.spin
+            cmd.parasync = request.cmd.para_sync
 
-            # motion parameters
-            cmd.coord = msg.cmd.coord
-
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
+            target_pos = tl_interface.VectorDouble(len(request.cmd.target_pos_value))
+            for i, v in enumerate(request.cmd.target_pos_value):
                 target_pos[i] = float(v)
             cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
-            # call sdk
             ret = tl_interface.job_insert_moveL(self.fd, line, cmd)
-
+            response.success = (ret == 0)
+            response.message = "Job insert movel successfully" if response.success else "Failed to insert job movel"
             self.get_logger().info(f"[JobInsertMoveL]: ret={ret}")
 
         except Exception as e:
+            response.success = False
+            response.message = str(e)
+            self.get_logger().error(f"handle_job_insert_movel_service failed: {e}")
 
-            self.get_logger().error(f"handle_job_insert_movel_topic failed: {e}")
+        return response
 
-    def handle_job_insert_imove_topic(self, msg):
+    def handle_job_insert_imove_service(self, request, response):
+        if not self.is_connected_:
+            response.success = False
+            response.message = "Arm is not connected"
+            return response
 
         try:
-
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertIMove]: arm is not connected")
-                return
-
-            line = msg.line
-
+            line = request.line
             cmd = tl_interface.MoveCmd()
 
-            # target position type
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
+            # matching C++ style: hardcode targetPosType/Name
+            cmd.targetPosType = tl_interface.PosType_data
+            cmd.targetPosName = ""
 
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
+            cmd.coord = request.cmd.coord
+            cmd.velocity = request.cmd.velocity
+            cmd.velocitySync = request.cmd.velocity_sync
+            cmd.acc = request.cmd.acc
+            cmd.dec = request.cmd.dec
+            cmd.pl = request.cmd.pl
+            cmd.time = request.cmd.time
+            cmd.toolNum = request.cmd.tool_num
+            cmd.userNum = request.cmd.user_num
+            cmd.posidtype = request.cmd.posidtype
+            cmd.configuration = request.cmd.configuration
+            cmd.spin = request.cmd.spin
+            cmd.parasync = request.cmd.para_sync
 
-            # motion parameters
-            cmd.coord = msg.cmd.coord
-
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
+            target_pos = tl_interface.VectorDouble(len(request.cmd.target_pos_value))
+            for i, v in enumerate(request.cmd.target_pos_value):
                 target_pos[i] = float(v)
             cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
-            # call sdk
             ret = tl_interface.job_insert_imove(self.fd, line, cmd)
+            response.success = (ret == 0)
+            response.message = "Job insert imove successfully" if response.success else "Failed to insert job imove"
             self.get_logger().info(f"[JobInsertIMove]: ret={ret}")
 
         except Exception as e:
+            response.success = False
+            response.message = str(e)
+            self.get_logger().error(f"handle_job_insert_imove_service failed: {e}")
 
-            self.get_logger().error(f"handle_job_insert_imove_topic failed: {e}")
+        return response
 
-    def handle_job_insert_movec_topic(self, msg):
+    def handle_job_insert_movec_service(self, request, response):
+        if not self.is_connected_:
+            response.success = False
+            response.message = "Arm is not connected"
+            return response
 
         try:
-
-            if not self.is_connected_:
-                self.get_logger().warning("[JobInsertMoveC]: arm is not connected")
-                return
-
-            line = msg.line
-
+            line = request.line
             cmd = tl_interface.MoveCmd()
 
-            # target position type
-            # 使用topic传入的类型
-            cmd.targetPosType = msg.cmd.target_pos_type
+            # matching C++ style: hardcode targetPosType/Name
+            cmd.targetPosType = tl_interface.PosType_data
+            cmd.targetPosName = ""
 
-            # 使用topic传入的点名
-            cmd.targetPosName = msg.cmd.target_pos_name
+            cmd.coord = request.cmd.coord
+            cmd.velocity = request.cmd.velocity
+            cmd.velocitySync = request.cmd.velocity_sync
+            cmd.acc = request.cmd.acc
+            cmd.dec = request.cmd.dec
+            cmd.pl = request.cmd.pl
+            cmd.time = request.cmd.time
+            cmd.toolNum = request.cmd.tool_num
+            cmd.userNum = request.cmd.user_num
+            cmd.posidtype = request.cmd.posidtype
+            cmd.configuration = request.cmd.configuration
+            cmd.spin = request.cmd.spin
+            cmd.parasync = request.cmd.para_sync
 
-            # motion parameters
-            cmd.coord = msg.cmd.coord
-
-            cmd.velocity = msg.cmd.velocity
-            cmd.velocitySync = msg.cmd.velocity_sync
-
-            cmd.acc = msg.cmd.acc
-            cmd.dec = msg.cmd.dec
-
-            cmd.pl = msg.cmd.pl
-            cmd.time = msg.cmd.time
-
-            cmd.toolNum = msg.cmd.tool_num
-            cmd.userNum = msg.cmd.user_num
-
-            cmd.posidtype = msg.cmd.posidtype
-            cmd.configuration = msg.cmd.configuration
-            cmd.spin = msg.cmd.spin
-
-            cmd.parasync = msg.cmd.para_sync
-
-            # target position vector
-            target_pos = tl_interface.VectorDouble(len(msg.cmd.target_pos_value))
-
-            for i, v in enumerate(msg.cmd.target_pos_value):
+            target_pos = tl_interface.VectorDouble(len(request.cmd.target_pos_value))
+            for i, v in enumerate(request.cmd.target_pos_value):
                 target_pos[i] = float(v)
             cmd.targetPosValue = target_pos
-            self.get_logger().info(f"targetPosType={cmd.targetPosType}")
-            self.get_logger().info(f"targetPosName={cmd.targetPosName}")
-            self.get_logger().info(f"targetPosValue={list(msg.cmd.target_pos_value)}")
 
-            # call sdk
             ret = tl_interface.job_insert_moveC(self.fd, line, cmd)
+            response.success = (ret == 0)
+            response.message = "Job insert movec successfully" if response.success else "Failed to insert job movec"
             self.get_logger().info(f"[JobInsertMoveC]: ret={ret}")
 
         except Exception as e:
+            response.success = False
+            response.message = str(e)
+            self.get_logger().error(f"handle_job_insert_movec_service failed: {e}")
 
-            self.get_logger().error(f"handle_job_insert_movec_topic failed: {e}")
+        return response
 
     def handle_get_all_job_filename_service(self, request, response):
 
@@ -2754,31 +2686,6 @@ class TLArmNode(Node):
 
         return response
 
-    def handle_tool_hand_calib_service(self, request, response):
-        try:
-            tool_num = int(request.tool_num)
-            point_num = int(request.point_num)
-        except Exception:
-            response.success = False
-            response.message = 'invalid request'
-            return response
-        ok = True
-        if tl_interface is not None and hasattr(tl_interface, 'tool_hand_calib'):
-            try:
-                if self._valid_fd():
-                    try:
-                        ok = tl_interface.tool_hand_calib(self.fd, tool_num, point_num)
-                    except TypeError:
-                        ok = tl_interface.tool_hand_calib(tool_num, point_num)
-                else:
-                    ok = tl_interface.tool_hand_calib(tool_num, point_num)
-            except Exception as e:
-                self.get_logger().error(f'tl_interface.tool_hand_calib failed: {e}')
-                ok = False
-        response.success = bool(ok)
-        response.message = 'ok' if ok else 'failed'
-        return response
-
     # IO / Modbus handlers
     def handle_set_digital_output_service(self, request, response):
         if self.fd is None or not self.is_connected_:
@@ -3093,12 +3000,34 @@ class TLArmNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = TLArmNode()
+    # Multi-threaded executor matching C++ node (max(4, hardware_concurrency))
+    num_threads = max(4, os.cpu_count() or 4)
+    executor = rclpy.executors.MultiThreadedExecutor(num_threads=num_threads)
+    executor.add_node(node)
+    node.get_logger().info(f'Starting MultiThreadedExecutor with {num_threads} threads')
+    
+    # flag to prevent re-entrance on double Ctrl+C
+    _shutting_down = False
+    
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
-        pass
+        if _shutting_down:
+            pass  # ignore second Ctrl+C
+        else:
+            _shutting_down = True
+            node.get_logger().info('[Shutdown]: Ctrl+C received, powering off...')
+            try:
+                node.power_off()
+            except Exception:
+                pass
+            try:
+                node.disconnect()
+            except Exception:
+                pass
     finally:
         try:
+            executor.remove_node(node)
             node.destroy_node()
         except Exception:
             pass
