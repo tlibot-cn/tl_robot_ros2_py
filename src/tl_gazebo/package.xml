@@ -16,7 +16,7 @@
 
   <maintainer email="tl@robot.com">tl</maintainer>
 
-  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>moveit_ros_move_group</exec_depend>
   <exec_depend>moveit_kinematics</exec_depend>
@@ -47,6 +47,6 @@
 
 
   <export>
-      <build_type>ament_cmake</build_type>
+      <build_type>ament_python</build_type>
   </export>
 </package>

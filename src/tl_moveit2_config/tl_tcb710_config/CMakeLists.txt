@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.22)
 project(tl_tcb710_config)
 
 find_package(ament_cmake REQUIRED)
-find_package(tl_description REQUIRED)
+
+# tl_description is a pure Python package (no CMake config), needed only at runtime
+# find_package(tl_description REQUIRED)  # ← removed: handled via exec_depend in package.xml
 
 ament_package()
 

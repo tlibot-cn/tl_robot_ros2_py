@@ -9,7 +9,7 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     # 获取包路径
     pkg_vision = FindPackageShare('tl_vision')
-    pkg_driver = FindPackageShare('tl_driver_cpp')
+    pkg_driver = FindPackageShare('tl_driver')
 
     arm_type = LaunchConfiguration('arm_type')
 
