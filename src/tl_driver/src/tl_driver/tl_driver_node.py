@@ -212,6 +212,7 @@ class TLArmNode(Node):
             # set current mode and servoj close
             try:
                 self.create_service(srvs.SetCurrentMode, '/tl_driver/set_current_mode', self.handle_set_current_mode_service, callback_group=self.service_group_)
+                self.create_service(srvs.GetCurrentMode, "/tl_driver/get_current_mode", self.handle_get_current_mode_service, callback_group=self.service_group_)
             except Exception:
                 pass
             self.create_service(Trigger, '/tl_driver/close_servoj', self.handle_close_servoj_service, callback_group=self.service_group_)
@@ -1177,6 +1178,31 @@ class TLArmNode(Node):
             self.get_logger().error(f'handle_set_current_mode_service failed: {e}')
             response.success = False
             response.message = str(e)
+
+        return response
+    
+    def handle_get_current_mode_service(self, request, response):
+        if self.fd is None or not self.is_connected_:
+            response.success = False
+            response.message = "Arm is not connected"
+            return response
+
+        try:
+            ret = tl_interface.get_current_mode(self.fd)
+            self.get_logger().info(f"get_current_mode ret={ret}")
+
+            # 赋值
+            response.mode = int(ret)
+            response.success = True
+            if response.success:
+                response.message = "Get current mode successfully"
+            else:
+                response.message = "Failed to get current mode"
+
+        except Exception as e:
+            response.success = False
+            response.message = f"Exception: {str(e)}"
+            response.mode = -1
 
         return response
 
