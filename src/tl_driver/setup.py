@@ -5,8 +5,8 @@ import shutil
 
 package_name = 'tl_driver'
 
-# 将 ARM 版 TL 库复制到 src/tl_driver/lib/ 供 package_data 打包
-pkg_lib_dir = os.path.join('src', 'tl_driver', 'lib')
+# 将 ARM 版 TL 库复制到 tl_driver/lib/ 供 package_data 打包
+pkg_lib_dir = os.path.join('tl_driver', 'lib')
 os.makedirs(pkg_lib_dir, exist_ok=True)
 
 arm_lib_dir = os.path.join('lib', 'arm')
@@ -33,7 +33,7 @@ setup(
     name=package_name,
     version='1.0.0',
     packages=['tl_driver', 'tl_driver.lib'],
-    package_dir={'': 'src'},
+    package_dir={'': '.'},
     package_data={'tl_driver.lib': ['_tl_host.*', 'tl_interface.py', 'libtl_host.*', 'libmath_wrapper.*', 'libmodbus_wrapper.*', 'libservoJ_wrapper.*']},
     data_files=data_files,
     include_package_data=True,
