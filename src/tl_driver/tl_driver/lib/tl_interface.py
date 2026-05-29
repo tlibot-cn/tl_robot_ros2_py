@@ -203,6 +203,36 @@ def get_robot_running_state(socketFd: int) -> int:
     ret = _make_func('get_robot_running_state', [SOCKETFD, ctypes.POINTER(ctypes.c_int)])(socketFd, ctypes.byref(state))
     return state.value if ret == SUCCESS else ret
 
+def get_current_motor_torque(socketFd: int) -> tuple:
+    """获取当前电机扭矩
+    返回 (结果码, 机器人扭矩列表(长度7,单位%), 外部轴扭矩列表(长度5,单位%))"""
+    motor_torque = (ctypes.c_int * 7)()
+    motor_torque_sync = (ctypes.c_int * 5)()
+    ret = _make_func('get_current_motor_torque', [
+        SOCKETFD,
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int)
+    ])(socketFd, motor_torque, motor_torque_sync)
+    if ret == SUCCESS:
+        return (ret, [motor_torque[i] for i in range(7)], [motor_torque_sync[i] for i in range(5)])
+    return (ret, [], [])
+
+def get_current_line_speed_and_joint_speed(socketFd: int) -> tuple:
+    """获取当前末端线速度和轴速度
+    返回 (结果码, 线速度(mm/s), 关节速度列表(长度5,度/s), 外部轴关节速度列表(长度5,度/s))"""
+    line_speed = ctypes.c_double()
+    joint_speed = (ctypes.c_double * 5)()
+    joint_speed_sync = (ctypes.c_double * 5)()
+    ret = _make_func('get_current_line_speed_and_joint_speed', [
+        SOCKETFD,
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double)
+    ])(socketFd, ctypes.byref(line_speed), joint_speed, joint_speed_sync)
+    if ret == SUCCESS:
+        return (ret, line_speed.value, [joint_speed[i] for i in range(5)], [joint_speed_sync[i] for i in range(5)])
+    return (ret, 0.0, [], [])
+
 def set_global_sync_position(socketFd: int, posName: str, posInfo: list) -> int:
     """设置全局GE点位，posInfo长度21"""
     if len(posInfo) != 21:
@@ -620,6 +650,7 @@ __all__ = [
     'get_joint_position', 'get_current_extra_position',
     'set_current_coord', 'get_current_coord', 'set_current_mode', 'get_current_mode',
     'get_robot_running_state',
+    'get_current_motor_torque', 'get_current_line_speed_and_joint_speed',
     # 全局点位/变量
     'set_global_position', 'get_global_position', 'set_global_sync_position', 'get_global_sync_position',
     'set_global_variant', 'get_global_variant',

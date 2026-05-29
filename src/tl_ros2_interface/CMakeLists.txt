@@ -72,6 +72,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/LogDownload.srv"
   "srv/GetPosTransform.srv"
   "srv/SetControllerIP.srv"
+  "srv/GetCurrentMotorTorque.srv"
+  "srv/GetCurrentLineJointSpeed.srv"
 
   DEPENDENCIES 
     action_msgs
