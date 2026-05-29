@@ -112,7 +112,7 @@ tl_driver:
     └── test_topics_and_services.py
 ```
 ## tl_driver话题与服务说明
-rm_driver的服务和话题较多，可以通过如下指令了解其话题信息。
+tl_driver的服务和话题较多，可以通过如下指令了解其话题信息。
 
 ![image](doc/tl_driver3.png)  
 ![image](doc/tl_driver4.png)  
