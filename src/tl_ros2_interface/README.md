@@ -9,6 +9,7 @@
 |版本号 | 时间 | 备注 |
 | :---: | :---- | :---: |
 |V1.0 | 2026-5-22 | 拟制 |
+|V1.1 | 2026-5-29 | 新增 JobInsertMove、GetCurrentMode、GetCurrentMotorTorque、GetCurrentLineJointSpeed 服务说明 |
 
 TL 系列机械臂 ROS2 接口说明
 
@@ -73,6 +74,11 @@ TL 系列机械臂 ROS2 接口说明
 * 5.39 [工具手参数标定ToolHandCalib_srv](#工具手参数标定ToolHandCalib_srv)
 * 5.40 [拖拽轨迹回放TrackPlayback_srv](#拖拽轨迹回放TrackPlayback_srv)
 * 5.41 [拖拽轨迹保存TrackSave_srv](#拖拽轨迹保存TrackSave_srv)
+* 5.42 [插入运动指令JobInsertMove_srv](#插入运动指令JobInsertMove_srv)
+* 5.43 [查询当前运行模式GetCurrentMode_srv](#查询当前运行模式GetCurrentMode_srv)
+* 5.44 [查询电机扭矩GetCurrentMotorTorque_srv](#查询电机扭矩GetCurrentMotorTorque_srv)
+* 5.45 [查询当前线速度与关节速度GetCurrentLineJointSpeed_srv](#查询当前线速度与关节速度GetCurrentLineJointSpeed_srv)
+
 
 ## tl_ros2_interface功能包说明
 tl_ros2_interface 功能包为 TL 系列机械臂在 ROS2 框架下提供消息（msg）和服务（srv）接口定义，供上层驱动或应用调用。该包本身没有可执行程序，主要作用为定义协议数据结构和服务接口。
@@ -140,6 +146,10 @@ tl_ros2_interface/
 │   ├── ToolHandCalib.srv
 │   ├── TrackPlayback.srv
 │   ├── TrackSave.srv
+│   ├── JobInsertMove.srv
+│   ├── GetCurrentMode.srv
+│   ├── GetCurrentMotorTorque.srv
+│   ├── GetCurrentLineJointSpeed.srv
 │   └── ...
 ```
 
@@ -913,6 +923,52 @@ string message
 - 保存轨迹
 - traj_name: 轨迹名称
 - 返回: success/message
+
+### 插入运动指令JobInsertMove_srv
+```
+int32 line
+MoveCommand cmd
+---
+bool success
+string message
+```
+- 向作业文件中插入运动指令（moveJ / moveL / iMove / moveC）
+- line: 插入行序号
+- cmd: 运动指令（MoveCommand.msg）
+- 返回: success/message
+
+### 查询当前运行模式GetCurrentMode_srv
+```
+---
+int32 mode
+bool success
+string message
+```
+- 查询当前运行模式
+- 返回: mode（0-示教 1-远程 2-运行）/ success/message
+
+### 查询电机扭矩GetCurrentMotorTorque_srv
+```
+---
+bool success
+string message
+int32[] motor_torque
+int32[] motor_torque_sync
+```
+- 获取当前电机扭矩
+- 返回: success/message/motor_torque（机器人扭矩，长度7，单位%）/motor_torque_sync（外部轴扭矩，长度5，单位%）
+
+### 查询当前线速度与关节速度GetCurrentLineJointSpeed_srv
+```
+---
+bool success
+string message
+float32 line_speed
+float32[] joint_speed
+float32[] joint_speed_sync
+```
+- 获取当前末端线速度和轴速度
+- 返回: success/message/line_speed（末端线速度，单位mm/s）/joint_speed（关节速度，长度5，单位度/s）/joint_speed_sync（外部轴关节速度，长度5，单位度/s）
 
 ## 说明与后续
 - 若需更详细的字段含义或示例用法，可提交 issue 或说明需要的具体消息/服务，文档将补充字段示例与使用场景。

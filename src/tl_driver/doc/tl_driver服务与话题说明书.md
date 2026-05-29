@@ -262,7 +262,7 @@ ros2 service call /tl_driver/get_joint_voltage tl_ros2_interface/srv/GetJointVol
 | :---: | :---- |
 | 通信机制 | ROS2服务 |
 | 参数说明 | GetMotorCurrent.srv |
-| 返回值 | true-查询成功，false-查询失败<br>查询成功时返回各个独立轴电机电流<br>float64[] current_motor：机械臂独立轴电机电流 |
+| 返回值 | true-查询成功，false-查询失败<br>查询成功时返回各个独立轴电机电流<br>float64[] motor_current：机械臂独立轴电机电流 |
 #### 命令示例
 ```
 ros2 service call /tl_driver/get_motor_current tl_ros2_interface/srv/GetMotorCurrent "{}"
