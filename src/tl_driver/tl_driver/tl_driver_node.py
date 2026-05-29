@@ -159,6 +159,8 @@ class TLArmNode(Node):
             self.create_service(srvs.GetJointTemperature, '/tl_driver/get_joint_temperature', self.handle_get_joint_temperature_service, callback_group=self.service_group_)
             self.create_service(srvs.GetJointVoltage, '/tl_driver/get_joint_voltage', self.handle_get_joint_voltage_service, callback_group=self.service_group_)
             self.create_service(srvs.GetMotorCurrent, '/tl_driver/get_motor_current', self.handle_get_motor_current_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetCurrentMotorTorque, '/tl_driver/get_current_motor_torque', self.handle_get_current_motor_torque_service, callback_group=self.service_group_)
+            self.create_service(srvs.GetCurrentLineJointSpeed, '/tl_driver/get_current_line_joint_speed', self.handle_get_current_line_joint_speed_service, callback_group=self.service_group_)
             self.create_service(srvs.GetJointSoftwareVersion, '/tl_driver/get_joint_software_version', self.handle_get_joint_software_version_service, callback_group=self.service_group_)
             self.create_service(Trigger, '/tl_driver/get_nexmotion_lib_version', self.handle_get_nexmotion_lib_version_service, callback_group=self.service_group_)
             self.create_service(srvs.RestoreDefaultDHParam, '/tl_driver/restore_default_dh_param', self.handle_restore_default_dh_param_service, callback_group=self.service_group_)
@@ -2389,6 +2391,73 @@ class TLArmNode(Node):
 
         except Exception as e:
             self.get_logger().error(f"handle_get_motor_current_service failed: {e}")
+
+            response.success = False
+            response.message = f"call failed: {e}"
+
+        return response
+
+    def handle_get_current_motor_torque_service(self, request, response):
+
+        try:
+            _ = request
+
+            if not self.is_connected_:
+                response.success = False
+                response.message = "Arm is not connected"
+                return response
+
+            motor_torque = tl_interface.VectorInt()
+            motor_torque_sync = tl_interface.VectorInt()
+            ret = tl_interface.get_current_motor_torque(self.fd, motor_torque, motor_torque_sync)
+            self.get_logger().info(f"get_current_motor_torque ret={ret}")
+
+            if ret == 0:
+                response.success = True
+                response.message = "Get motor torque successfully"
+                response.motor_torque = [int(x) for x in motor_torque]
+                response.motor_torque_sync = [int(x) for x in motor_torque_sync]
+
+            else:
+                response.success = False
+                response.message = "Failed to get motor torque"
+
+        except Exception as e:
+            self.get_logger().error(f"handle_get_motor_torque_service failed: {e}")
+
+            response.success = False
+            response.message = f"call failed: {e}"
+
+        return response
+
+    def handle_get_current_line_joint_speed_service(self, request, response):
+
+        try:
+            _ = request
+
+            if not self.is_connected_:
+                response.success = False
+                response.message = "Arm is not connected"
+                return response
+
+            joint_speed = tl_interface.VectorDouble()
+            joint_speed_sync = tl_interface.VectorDouble()
+            ret, line_speed = tl_interface.get_current_line_speed_and_joint_speed(self.fd, 0.0, joint_speed, joint_speed_sync)
+            self.get_logger().info(f"get_current_line_speed_and_joint_speed ret={ret}")
+
+            if ret == 0:
+                response.success = True
+                response.message = "Get current line joint speed successfully"
+                response.line_speed = float(line_speed)
+                response.joint_speed = [float(x) for x in joint_speed]
+                response.joint_speed_sync = [float(x) for x in joint_speed_sync]
+
+            else:
+                response.success = False
+                response.message = "Failed to get current line joint speed"
+
+        except Exception as e:
+            self.get_logger().error(f"handle_get_current_line_joint_speed_service failed: {e}")
 
             response.success = False
             response.message = f"call failed: {e}"
