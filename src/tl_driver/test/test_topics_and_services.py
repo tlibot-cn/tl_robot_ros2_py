@@ -1,5 +1,5 @@
 import rclpy
-from tl_driver.src.tl_driver.tl_driver_node import TLArmNode
+from tl_driver.tl_driver.tl_driver_node import TLArmNode
 from std_srvs.srv import Trigger
 import tl_ros2_interface.srv as srvs
 import tl_ros2_interface.msg as msgs

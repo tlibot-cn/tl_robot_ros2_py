@@ -1478,40 +1478,64 @@ class TLArmNode(Node):
         return response
 
     def handle_coord_transform_service(self, request, response):
-        try:
-            origin = int(request.origin_coord)
-            target = int(request.target_coord)
-            form = int(request.form)
-            origin_pos = list(request.origin_pos)
-            reference = list(request.reference_pos)
-        except Exception:
+        if not self.is_connected_:
             response.success = False
-            response.message = 'invalid request'
-            response.target_pos = []
+            response.message = "Arm is not connected"
             return response
-        ok = True
-        target_pos = []
+
+        # 检查坐标系范围
+        if request.origin_coord < 0 or request.origin_coord > 3:
+            response.success = False
+            response.message = "Invalid origin coordinate"
+            return response
+
+        if request.target_coord < 0 or request.target_coord > 3:
+            response.success = False
+            response.message = "Invalid target coordinate"
+            return response
+
         try:
-            if tl_interface is not None and hasattr(tl_interface, 'coord_transform'):
-                try:
-                    buf = []
-                    if self._valid_fd():
-                        res = tl_interface.coord_transform(self.fd, origin, target, form, origin_pos, reference, buf)
-                    else:
-                        res = tl_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
-                    ok = _is_success(res)
-                    target_pos = list(buf)
-                except TypeError:
-                    buf = []
-                    res = tl_interface.coord_transform(origin, target, form, origin_pos, reference, buf)
-                    ok = _is_success(res)
-                    target_pos = list(buf)
+            # Python list -> SWIG VectorDouble
+            origin_pos = tl_interface.VectorDouble()
+            for v in request.origin_pos:
+                origin_pos.append(float(v))
+
+            reference_pos = tl_interface.VectorDouble()
+            for v in request.reference_pos:
+                reference_pos.append(float(v))
+
+            # 输出参数
+            target_pos = tl_interface.VectorDouble()
+
+            # 调用SDK
+            ret = tl_interface.get_origin_coord_to_target_coord(
+                self.fd,
+                int(request.origin_coord),
+                origin_pos,
+                int(request.target_coord),
+                target_pos,
+                int(request.form),
+                reference_pos
+            )
+
+            # 结果判断
+            response.success = (ret == 0)
+
+            if response.success:
+                response.message = "Coord transform successfully"
+
+                # SWIG VectorDouble -> ROS2 array
+                response.target_pos = [target_pos[i] for i in range(target_pos.size())]
+
+            else:
+                response.message = f"Failed to transform coord, ret={ret}"
+                response.target_pos = []
+
         except Exception as e:
-            self.get_logger().error(f'coord_transform failed: {e}')
-            ok = False
-        response.success = bool(ok)
-        response.message = 'ok' if ok else 'failed'
-        response.target_pos = list(target_pos)
+            response.success = False
+            response.message = f"Exception: {e}"
+            response.target_pos = []
+
         return response
 
     def handle_get_pos_reachable_service(self, request, response):
