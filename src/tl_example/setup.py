@@ -27,6 +27,12 @@ setup(
         (
             os.path.join('share', package_name, 'config'), ['config/saved_points.json']
         ),
+        (
+            os.path.join('share', package_name, 'config'), ['config/test.json']
+        ),
+                (
+            os.path.join('share', package_name, 'config'), ['config/testv1.json']
+        ),
     ],
 
     install_requires=['setuptools'],
@@ -43,6 +49,7 @@ setup(
     entry_points={
         'console_scripts': [
             'servoj_trajectory_playback = tl_example.servoj_trajectory_playback:main',
+            'servoj_trajectory_playback0608 = tl_example.servoj_trajectory_playback0608:main',
             'queue_trajectory_playback = tl_example.queue_trajectory_playback:main',
         ],
     },

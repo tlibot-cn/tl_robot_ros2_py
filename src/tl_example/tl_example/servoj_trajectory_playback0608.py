@@ -2,8 +2,7 @@
 """
 Servoj 轨迹回放脚本（ROS2 节点）
 
-从 config/saved_points.json 读取位置点，拼合固定姿态后通过 coord_transform
-转换为关节角度，以 servoj 模式逐点发送给机械臂执行。
+从 config/testv1.json 读取关节角度轨迹点，以 servoj 模式逐点发送给机械臂执行。
 
 使用方法：
   1. 确保 tl_driver 节点已启动并连接机械臂
@@ -29,21 +28,17 @@ import tl_ros2_interface.msg as msgs
 # ============================================================
 # 全局可调参数（直接修改这里的值即可）
 # ============================================================
-ARM_ANGLE = 0.0                 # 臂角 (7维位姿的第7个元素)
-PUBLISH_FREQUENCY = 100          # servoj 关节角度发布频率（Hz），范围 100~250
+PUBLISH_FREQUENCY = 50          # servoj 关节角度发布频率（Hz），范围 100~250
 
-OPEN_SERVOJ_VMAX = [30.0] * 7   # servoj 最大速度
+OPEN_SERVOJ_VMAX = [50.0] * 7   # servoj 最大速度
 OPEN_SERVOJ_AMAX = [300.0] * 7  # servoj 最大加速度
 OPEN_SERVOJ_JMAX = [3000.0] * 7 # servoj 最大加加速度
 
-ZERO_JOINT = [-34.381, 5.992, -0.247, 4.799, -1.359, -9.841, -62.214]  # 初始关节角度
+ZERO_JOINT = [3.0, -92.5, -3.2, 6.6, -90.0, -31.7, -10.0]  # 初始关节角度
 
 
-ROLL = 3.13   # 固定横滚角
-PITCH = -0.027    # 固定俯仰角
-YAW = -0.485      # 固定偏航角
-
-MOVE_SPEED = 20.0     # 机械臂运行速度（%），MoveJ/MoveL 共用
+MOVE_SPEED = 60.0     # 机械臂运行速度（%），MoveJ/MoveL 共用
+TARGET_POINTS = 400    # 插值后总目标点数（关键帧之间线性插值）
 # ============================================================
 
 try:
@@ -51,7 +46,7 @@ try:
 except Exception:
     # Fallback：未安装时指向包根目录
     PKG_SHARE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
-JSON_PATH = os.path.join(PKG_SHARE_DIR, "config", "saved_points.json")
+JSON_PATH = os.path.join(PKG_SHARE_DIR, "config", "testv1.json")
 
 
 class ServojTrajectoryPlayback(Node):
@@ -61,8 +56,6 @@ class ServojTrajectoryPlayback(Node):
         # ---- 服务客户端 ----
         self.cli_connect = self.create_client(Trigger, '/tl_driver/connect_arm')
         self.cli_power_on = self.create_client(Trigger, '/tl_driver/power_on')
-        self.cli_coord_transform = self.create_client(
-            srvs.CoordTransform, '/tl_driver/coord_transform')
         self.cli_open_servoj = self.create_client(
             srvs.OpenServoJ, '/tl_driver/open_servoj')
         self.cli_set_speed = self.create_client(
@@ -124,7 +117,7 @@ class ServojTrajectoryPlayback(Node):
         """MoveJ 回到零位（关节坐标系），等待到位确认"""
         self.get_logger().info('MoveJ 回到零位...')
         msg = msgs.MoveCommand()
-        msg.target_pos_value = ZERO_JOINT + [0.0] * 7
+        msg.target_pos_value = list(ZERO_JOINT)
         msg.target_pos_name = ''
         msg.target_pos_type = 0
         msg.coord = 0           # 关节坐标系
@@ -171,33 +164,6 @@ class ServojTrajectoryPlayback(Node):
         # 额外留一点缓冲
         time.sleep(0.3)
 
-    def pose_to_joint(self, x, y, z):
-        """调用 coord_transform 将单个笛卡尔位姿转换为关节角度
-
-        拼接的完整位姿: [x, y, z, ROLL, PITCH, YAW, ARM_ANGLE]
-                     = [{x}, {y}, {z}, {ROLL}, {PITCH}, {YAW}, {ARM_ANGLE}]
-
-        返回: list[float] 关节角度
-        """
-        req = srvs.CoordTransform.Request()
-        req.origin_coord = 1   # 直角坐标系
-        req.target_coord = 0   # 关节坐标系
-        req.form = 0
-        origin_pose = [float(x), float(y), float(z), ROLL, PITCH, YAW, ARM_ANGLE]
-        req.origin_pos = origin_pose
-        # reference_pos 使用 ZERO_JOINT 作为参考，确保 IK 收敛到一致的构型
-        req.reference_pos = list(ZERO_JOINT)
-
-        self.get_logger().info(
-            f'  请求 origin_pos={origin_pose}')
-        resp = self.call_service(self.cli_coord_transform, req)
-        if not resp.success:
-            raise RuntimeError(f'坐标转换失败：{resp.message}')
-        result = list(resp.target_pos)
-        self.get_logger().info(
-            f'  返回 target_pos={result}')
-        return result
-
     def open_servoj_mode(self):
         """打开关节跟踪模式"""
         self.get_logger().info('打开 servoj 模式...')
@@ -218,49 +184,55 @@ class ServojTrajectoryPlayback(Node):
             raise RuntimeError(f'关闭 servoj 失败：{resp.message}')
         self.get_logger().info('servoj 模式已关闭')
 
+    def interpolate_keyframes(self, keyframes, target_total):
+        """在关键帧之间线性插值，生成 target_total 个点"""
+        n_kf = len(keyframes)
+        if n_kf < 2:
+            return keyframes
+        n_seg = n_kf - 1
+        ndim = len(keyframes[0])
+
+        # 计算每段需要插入的点数
+        pts_per_seg = []
+        remaining = target_total - n_kf
+        for i in range(n_seg):
+            cnt = remaining // (n_seg - i)
+            pts_per_seg.append(cnt)
+            remaining -= cnt
+
+        result = []
+        for i in range(n_seg):
+            a = keyframes[i]
+            b = keyframes[i + 1]
+            result.append(a)
+            cnt = pts_per_seg[i]
+            for s in range(1, cnt + 1):
+                t = s / (cnt + 1)
+                pt = [(1 - t) * a[j] + t * b[j] for j in range(ndim)]
+                result.append(pt)
+        result.append(keyframes[-1])
+        return result
+
     def send_joint_angles(self, joint_angles):
         """发布关节角度到 /tl_driver/set_servoj_pos"""
         msg = Float64MultiArray()
-        msg.data = list(joint_angles)
+        msg.data = [float(v) for v in joint_angles]
         self.servoj_pub.publish(msg)
 
-    def execute_group(self, name, points):
+    def execute_group(self, name, keyframes):
         """执行一组轨迹点
 
-        分为两个阶段：
-          阶段 1：批量预计算 — 将所有笛卡尔点通过 coord_transform 转成关节角度
-          阶段 2：精确回放 — 用 Rate 以 PUBLISH_FREQUENCY 频率逐个发布关节角度
+        从 JSON 读取关键帧关节角度，插值后以 servoj 模式逐点发送给机械臂执行。
         """
-        total = len(points)
-        self.get_logger().info(f'\n====== 开始执行组 "{name}"（共 {total} 个点） ======')
-
-        # --------------------------------------------------
-        # 阶段 1：批量预计算关节角度
-        # --------------------------------------------------
-        self.get_logger().info('阶段 1/2：批量预计算关节角度...')
-        precomputed_joints = []
-        failed_indices = []
-        for i, (x, y, z) in enumerate(points, 1):
-            try:
-                self.get_logger().info(
-                    f'  [{i:3d}/{total}] 坐标转换 ({x:.1f}, {y:.1f}, {z:.1f})')
-                joint = self.pose_to_joint(x, y, z)
-                precomputed_joints.append(joint)
-            except Exception as e:
-                self.get_logger().error(f'  [{i:3d}/{total}] 坐标转换失败：{e}')
-                import traceback
-                self.get_logger().error(traceback.format_exc())
-                failed_indices.append(i)
-
-        if not precomputed_joints:
-            self.get_logger().error('所有点坐标转换均失败，跳过执行')
-            return
-
+        # 在关键帧之间插值
+        play_points = self.interpolate_keyframes(keyframes, TARGET_POINTS)
+        total = len(play_points)
+        n_kf = len(keyframes)
         self.get_logger().info(
-            f'预计算完成：成功 {len(precomputed_joints)}/{total} 个点')
+            f'\n====== 开始执行组 "{name}"（{n_kf} 个关键帧 → 插值至 {total} 个点） ======')
 
         # --------------------------------------------------
-        # 阶段 2：MoveJ 归零 + 打开 servoj 模式
+        # 阶段 1：MoveJ 归零 + 打开 servoj 模式
         # --------------------------------------------------
         self.set_speed()
         self.move_to_zero()
@@ -269,12 +241,12 @@ class ServojTrajectoryPlayback(Node):
         time.sleep(2.0)  # 等待 servoj 模式稳定
 
         # --------------------------------------------------
-        # 阶段 3：精准定时回放（time.sleep + 时间补偿）
+        # 阶段 2：精准定时回放（time.sleep + 时间补偿）
         # --------------------------------------------------
         self.get_logger().info(
-            f'阶段 3/3：以 {PUBLISH_FREQUENCY} Hz 回放 {len(precomputed_joints)} 个点...')
+            f'阶段 2/2：以 {PUBLISH_FREQUENCY} Hz 回放 {total} 个点...')
         interval = 1.0 / PUBLISH_FREQUENCY
-        for i, joint in enumerate(precomputed_joints, 1):
+        for i, joint in enumerate(play_points, 1):
             t_start = time.monotonic()
             self.send_joint_angles(joint)
             elapsed = time.monotonic() - t_start
@@ -304,20 +276,17 @@ def main(args=None):
         data = json.load(f)
 
     group_keys = list(data.keys())
-    if len(group_keys) < 2:
-        print('错误：JSON 中至少需要两组数据（昊、辰）')
-        sys.exit(1)
-
-    group_1_name = group_keys[0]
-    group_2_name = group_keys[1]
+    num_groups = len(group_keys)
 
     # 终端选择菜单
     print('\n' + '=' * 55)
     print('  轨迹执行脚本')
     print('=' * 55)
-    print(f'  1. 执行 "{group_1_name}"（{len(data[group_1_name])} 个点）')
-    print(f'  2. 执行 "{group_2_name}"（{len(data[group_2_name])} 个点）')
-    print(f'  3. 执行 "1+2" 连续（{len(data[group_1_name])} + {len(data[group_2_name])} 个点）')
+    for i, key in enumerate(group_keys, 1):
+        print(f'  {i}. 执行 "{key}"（{len(data[key])} 个点）')
+    if num_groups > 1:
+        total_pts = sum(len(data[k]) for k in group_keys)
+        print(f'  A. 全部执行（共 {total_pts} 个点）')
     print(f'  0. 取消退出')
     print('=' * 55)
 
@@ -327,17 +296,22 @@ def main(args=None):
         print('已取消，退出脚本。')
         rclpy.shutdown()
         return
-    elif choice == '1':
-        groups = [(group_1_name, data[group_1_name])]
-    elif choice == '2':
-        groups = [(group_2_name, data[group_2_name])]
-    elif choice == '3':
-        groups = [(group_1_name, data[group_1_name]),
-                  (group_2_name, data[group_2_name])]
+    elif choice.lower() == 'a' and num_groups > 1:
+        groups = [(k, data[k]) for k in group_keys]
     else:
-        print('无效输入，退出脚本。')
-        rclpy.shutdown()
-        return
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < num_groups:
+                key = group_keys[idx]
+                groups = [(key, data[key])]
+            else:
+                print('无效输入，退出脚本。')
+                rclpy.shutdown()
+                return
+        except (ValueError, IndexError):
+            print('无效输入，退出脚本。')
+            rclpy.shutdown()
+            return
 
     # 初始化节点并执行
     node = ServojTrajectoryPlayback()
@@ -348,7 +322,6 @@ def main(args=None):
         for cli, name in [
             (node.cli_connect, '/tl_driver/connect_arm'),
             (node.cli_power_on, '/tl_driver/power_on'),
-            (node.cli_coord_transform, '/tl_driver/coord_transform'),
             (node.cli_open_servoj, '/tl_driver/open_servoj'),
             (node.cli_set_speed, '/tl_driver/set_speed'),
             (node.cli_close_servoj, '/tl_driver/close_servoj'),
