@@ -28,8 +28,14 @@ TL 系列机械臂 ROS2 接口与功能包集 — 四川天链机器人股份有
 # 克隆仓库
 git clone https://github.com/tlibot-cn/tl_robot_ros2_py.git
 
-# 编译
+# 切到工作区目录
 cd ~/tl_robot_ros2_py
+
+# 建议使用 python 虚拟环境
+python -m venv .venv
+source .venv/bin/activate
+
+# 编译
 colcon build
 source install/setup.bash
 ```
