@@ -31,6 +31,9 @@ git clone https://github.com/tlibot-cn/tl_robot_ros2_py.git
 # 切到工作区目录
 cd ~/tl_robot_ros2_py
 
+# 初始化 Git 子模块
+git submodule update --init
+
 # 建议使用 python 虚拟环境
 python -m venv .venv
 source .venv/bin/activate
