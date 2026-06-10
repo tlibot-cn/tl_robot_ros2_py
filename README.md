@@ -34,16 +34,14 @@ cd ~/tl_robot_ros2_py
 # 初始化 Git 子模块
 git submodule update --init
 
-# 建议使用 python 虚拟环境
-python -m venv .venv
-source .venv/bin/activate
-
 # 编译
 colcon build
 source install/setup.bash
 ```
 
 编译完成后即可进行各功能包的运行操作。
+
+> **关于 tl_teleop 遥操作功能包**：`tl_teleop` 的 `setup.py` 已集成 `xrobotoolkit_sdk`（VR 手柄 Python 绑定库）的自动构建与安装。编译前建议先阅读 [`src/tl_teleop/README.md`](src/tl_teleop/README.md) 中的「xrobotoolkit_sdk 安装」小节，了解原生库依赖和两种安装方式。
 
 ## 运行
 
