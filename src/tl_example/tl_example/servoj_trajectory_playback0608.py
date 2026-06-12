@@ -30,9 +30,9 @@ import tl_ros2_interface.msg as msgs
 # ============================================================
 PUBLISH_FREQUENCY = 50          # servoj 关节角度发布频率（Hz），范围 100~250
 
-OPEN_SERVOJ_VMAX = [50.0] * 7   # servoj 最大速度
-OPEN_SERVOJ_AMAX = [300.0] * 7  # servoj 最大加速度
-OPEN_SERVOJ_JMAX = [3000.0] * 7 # servoj 最大加加速度
+OPEN_SERVOJ_VMAX = [300.0] * 7   # servoj 最大速度
+OPEN_SERVOJ_AMAX = [3000.0] * 7  # servoj 最大加速度
+OPEN_SERVOJ_JMAX = [50000.0] * 7 # servoj 最大加加速度
 
 ZERO_JOINT = [3.0, -92.5, -3.2, 6.6, -90.0, -31.7, -10.0]  # 初始关节角度
 
