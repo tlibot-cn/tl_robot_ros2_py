@@ -45,6 +45,38 @@ tl_description 功能包为显示机器人模型和 TF 变换的功能包，通�
 | `tcb710` | 7轴 | 否 |
 | `tcb710v` | 7轴 | 是（camera_link） |
 
+### 专用启动文件（推荐）
+
+每种臂型都配有对应的专用 launch 文件，无需传参即可启动。通过 `use_sim` 参数选择模式：
+
+- `use_sim:=false`（默认）— 真实机械臂控制模式，需配合 `tl_driver` 使用
+- `use_sim:=true` — 仿真控制模式，启动 `joint_state_publisher_gui` 滑块界面
+
+| 臂型 | 启动命令 |
+|------|----------|
+| TCB605 | `ros2 launch tl_description tcb605_description.launch.py` |
+| TCB605F | `ros2 launch tl_description tcb605f_description.launch.py` |
+| TCB605L | `ros2 launch tl_description tcb605l_description.launch.py` |
+| TCB605LV | `ros2 launch tl_description tcb605lv_description.launch.py` |
+| TCB605V | `ros2 launch tl_description tcb605v_description.launch.py` |
+| TCB610 | `ros2 launch tl_description tcb610_description.launch.py` |
+| TCB610V | `ros2 launch tl_description tcb610v_description.launch.py` |
+| TCB705 | `ros2 launch tl_description tcb705_description.launch.py` |
+| TCB705F | `ros2 launch tl_description tcb705f_description.launch.py` |
+| TCB705L | `ros2 launch tl_description tcb705l_description.launch.py` |
+| TCB705LV | `ros2 launch tl_description tcb705lv_description.launch.py` |
+| TCB705V | `ros2 launch tl_description tcb705v_description.launch.py` |
+| TCB710 | `ros2 launch tl_description tcb710_description.launch.py` |
+| TCB710V | `ros2 launch tl_description tcb710v_description.launch.py` |
+
+例如仿真模式启动 TCB605：
+```bash
+ros2 launch tl_description tcb605_description.launch.py use_sim:=true
+```
+
+### 通用启动文件（传参方式）
+
+也可使用通用启动文件手动指定臂型：
 ```bash
 ros2 launch tl_description tl_description.launch.py arm_type:=<arm_type> use_sim:=<use_sim>
 ```
@@ -101,8 +133,22 @@ ros2 launch tl_description tl_description.launch.py arm_type:=tcb605 use_sim:=fa
 │   └── joint_names_tcb710v.yaml
 ├── doc                                      # 辅助文档、图片文件
 │   └── tl_description.png
-├── launch                                   # 启动文件
-│   └── tl_description.launch.py
+├── launch                                   # 启动文件（1 通用 + 14 专用）
+│   ├── tl_description.launch.py             # 通用启动入口（传参指定臂型）
+│   ├── tcb605_description.launch.py         # TCB605 专用
+│   ├── tcb605f_description.launch.py        # TCB605F 专用
+│   ├── tcb605l_description.launch.py        # TCB605L 专用
+│   ├── tcb605lv_description.launch.py       # TCB605LV 专用
+│   ├── tcb605v_description.launch.py        # TCB605V 专用
+│   ├── tcb610_description.launch.py         # TCB610 专用
+│   ├── tcb610v_description.launch.py        # TCB610V 专用
+│   ├── tcb705_description.launch.py         # TCB705 专用
+│   ├── tcb705f_description.launch.py        # TCB705F 专用
+│   ├── tcb705l_description.launch.py        # TCB705L 专用
+│   ├── tcb705lv_description.launch.py       # TCB705LV 专用
+│   ├── tcb705v_description.launch.py        # TCB705V 专用
+│   ├── tcb710_description.launch.py         # TCB710 专用
+│   └── tcb710v_description.launch.py        # TCB710V 专用
 ├── meshes                                   # 各型号 STL 网格模型文件
 │   ├── tcb605                               # 6轴，无相机
 │   │   ├── link0.STL ~ link6.STL
