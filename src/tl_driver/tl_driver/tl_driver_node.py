@@ -260,6 +260,16 @@ class TLArmNode(Node):
                     callback_group=self.topic_group_)
             except Exception:
                 self.get_logger().warning('set_servoj_pos message type not available; skipping')
+            # set_servol (笛卡尔直线伺服) topic — 放在 servoj 下方
+            try:
+                self.set_servol_pos_sub = self.create_subscription(
+                    msgs.ServolMove,
+                    '/tl_driver/set_servol_pos',
+                    self.handle_set_servol_pos_topic,
+                    10,
+                    callback_group=self.topic_group_)
+            except Exception:
+                self.get_logger().warning('ServolMove msg type not available; skipping')
         except Exception:
             self.get_logger().warning('Move/Job message types not available; skipping subscriptions')
 
@@ -432,7 +442,7 @@ class TLArmNode(Node):
             except Exception:
                 pass
 
-            self.get_logger().info(f'[Connect]: successfully connected to arm at {ip}:{port},{port_aux}')
+            # self.get_logger().info(f'[Connect]: successfully connected to arm at {ip}:{port},{port_aux}')
             return True
         except Exception as e:
             self.get_logger().error(f'connect() failed: {e}')
@@ -1383,6 +1393,176 @@ class TLArmNode(Node):
         except Exception as e:
 
             self.get_logger().error(f"handle_set_servoj_pos_topic failed: {e}")
+
+    # ---------- ServoL 笛卡尔空间直线伺服运动 ----------
+    def _rpy_to_quat(self, rpy):
+        """欧拉角 (rx, ry, rz) rad -> 四元数 (w, x, y, z)"""
+        cr = math.cos(rpy[0] * 0.5)
+        sr = math.sin(rpy[0] * 0.5)
+        cp = math.cos(rpy[1] * 0.5)
+        sp = math.sin(rpy[1] * 0.5)
+        cy = math.cos(rpy[2] * 0.5)
+        sy = math.sin(rpy[2] * 0.5)
+        return [
+            cr * cp * cy + sr * sp * sy,  # w
+            sr * cp * cy - cr * sp * sy,  # x
+            cr * sp * cy + sr * cp * sy,  # y
+            cr * cp * sy - sr * sp * cy,  # z
+        ]
+
+    def _quat_to_rpy(self, q):
+        """四元数 (w, x, y, z) -> 欧拉角 (rx, ry, rz) rad"""
+        w, x, y, z = q
+        # 旋转矩阵转欧拉角 ZYX (rpy)
+        t0 = 2.0 * (w * x + y * z)
+        t1 = 1.0 - 2.0 * (x * x + y * y)
+        rx = math.atan2(t0, t1)
+
+        t2 = 2.0 * (w * y - z * x)
+        t2 = max(-1.0, min(1.0, t2))
+        ry = math.asin(t2)
+
+        t3 = 2.0 * (w * z + x * y)
+        t4 = 1.0 - 2.0 * (y * y + z * z)
+        rz = math.atan2(t3, t4)
+
+        return [rx, ry, rz]
+
+    def _quat_slerp(self, q1, q2, t):
+        """四元数球面线性插值 Slerp"""
+        dot = q1[0]*q2[0] + q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3]
+
+        # 处理负点积 — 取最短路径
+        if dot < 0.0:
+            q2 = [-v for v in q2]
+            dot = -dot
+
+        # 防止数值不稳定
+        DOT_THRESHOLD = 0.9995
+        if dot > DOT_THRESHOLD:
+            # 角度极小，线性插值后归一化
+            result = [q1[i] + t * (q2[i] - q1[i]) for i in range(4)]
+            norm = math.sqrt(sum(v*v for v in result))
+            return [v / norm for v in result]
+
+        theta_0 = math.acos(dot)
+        sin_theta_0 = math.sin(theta_0)
+        theta = theta_0 * t
+
+        s0 = math.cos(theta) - dot * math.sin(theta) / sin_theta_0
+        s1 = math.sin(theta) / sin_theta_0
+
+        return [s0 * q1[i] + s1 * q2[i] for i in range(4)]
+
+    def handle_set_servol_pos_topic(self, msg):
+        if self.fd is None or not self.is_connected_:
+            self.get_logger().warn("[ServoL] Arm is not connected, ignoring message")
+            return
+
+        try:
+            # ========= 1. 获取当前位姿 =========
+            # coord: 1=Cartesian(Base), 2=Tool, 3=User
+            coord = int(msg.coord)
+            if coord < 1 or coord > 3:
+                coord = 1  # 默认基座标系
+
+            current_pos = tl_interface.VectorDouble()
+            ret = tl_interface.get_current_position(self.fd, coord, current_pos)
+            if ret != 0 or current_pos.size() < 6:
+                self.get_logger().error("[ServoL] Failed to get current position")
+                return
+
+            cur_pose = [current_pos[i] for i in range(6)]  # [x, y, z, rx, ry, rz]
+            target_pose = list(msg.target_pose)
+
+            if len(target_pose) < 6:
+                self.get_logger().error("[ServoL] target_pose must have at least 6 elements")
+                return
+
+            # ========= 2. 计算插值点数 =========
+            dx = target_pose[0] - cur_pose[0]
+            dy = target_pose[1] - cur_pose[1]
+            dz = target_pose[2] - cur_pose[2]
+            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+            step_size = float(msg.step_size)
+            if step_size <= 0.0:
+                step_size = 5.0  # 默认步长 5mm
+
+            N = max(1, int(math.ceil(dist / step_size)))
+            self.get_logger().info(f"[ServoL] received: dist={dist:.1f}mm, step={step_size}, divided into {N} points")
+
+            # ========= 3. 准备 IK 参数 =========
+            # 目标坐标系为关节空间(0)，需从笛卡尔(coord)转换
+            cur_quat = self._rpy_to_quat(cur_pose[3:6])
+            target_quat = self._rpy_to_quat(target_pose[3:6])
+
+            # 构建参考位姿（空 VectorDouble）
+            ref_pos = tl_interface.VectorDouble()
+            for _ in range(7):
+                ref_pos.append(0.0)
+
+            # ========= 4. 插值 + IK + servoj 发送 =========
+            period = 0.01  # 100Hz
+            next_time = time.perf_counter()
+
+            for i in range(1, N + 1):
+                t = i / N
+
+                # 位置线性插值
+                ix = cur_pose[0] + t * dx
+                iy = cur_pose[1] + t * dy
+                iz = cur_pose[2] + t * dz
+
+                # 姿态四元数 Slerp
+                iq = self._quat_slerp(cur_quat, target_quat, t)
+                irpy = self._quat_to_rpy(iq)
+
+                # 构建插值位姿 VectorDouble
+                interp_pos = tl_interface.VectorDouble()
+                interp_pos.append(float(ix))
+                interp_pos.append(float(iy))
+                interp_pos.append(float(iz))
+                interp_pos.append(float(irpy[0]))
+                interp_pos.append(float(irpy[1]))
+                interp_pos.append(float(irpy[2]))
+                interp_pos.append(0.0)  # 第7轴补0
+
+                # IK: 笛卡尔(coord) -> 关节(0)
+                joint_pos = tl_interface.VectorDouble()
+                ret = tl_interface.get_origin_coord_to_target_coord(
+                    self.fd,
+                    coord,
+                    interp_pos,
+                    0,           # target_coord = 0 (关节)
+                    joint_pos,
+                    0,           # form = 0
+                    ref_pos,
+                )
+
+                if ret != 0:
+                    self.get_logger().warn(f"[ServoL] IK failed at point {i}/{N}, ret={ret}")
+                    # 跳过失败的点，继续下一插值点
+                    next_time += period
+                    continue
+
+                # 通过 servoj 发送关节角
+                ret = tl_interface.set_servoJ_pos(self.fd_aux, joint_pos)
+                if ret != 0:
+                    self.get_logger().warn(f"[ServoL] set_servoJ_pos failed at point {i}/{N}, ret={ret}")
+                    # 即使发送失败，也继续下一插值点
+
+                # accumulative timing
+                next_time += period
+                sleep_time = next_time - time.perf_counter()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+
+            # ========= 5. 记录完成 =========
+            self.get_logger().info(f"[ServoL] completed to {target_pose}, {N} points")
+
+        except Exception as e:
+            self.get_logger().error(f"handle_set_servol_pos_topic failed: {e}")
 
     # Global position / coord transform / reachability / dh param
     def handle_set_global_pos_service(self, request, response):
@@ -3119,11 +3299,13 @@ class TLArmNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = TLArmNode()
-    # Multi-threaded executor matching C++ node (max(4, hardware_concurrency))
-    num_threads = max(4, os.cpu_count() or 4)
+    # Multi-threaded executor: 线程池大小取 max(4, CPU线程数)
+    cpu_threads = os.cpu_count() or 4
+    num_threads = max(4, cpu_threads)
     executor = rclpy.executors.MultiThreadedExecutor(num_threads=num_threads)
     executor.add_node(node)
-    node.get_logger().info(f'Starting MultiThreadedExecutor with {num_threads} threads')
+    node.get_logger().info(f'Starting MultiThreadedExecutor with {num_threads} threads (detected {cpu_threads} CPU threads, min 4)')
+    node.get_logger().info('Callback groups: service(MutuallyExclusive) + topic(MutuallyExclusive) + timer(Reentrant) = 3 logical lanes')
     
     # flag to prevent re-entrance on double Ctrl+C
     _shutting_down = False
