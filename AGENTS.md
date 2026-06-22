@@ -185,3 +185,47 @@ tl_driver/
 - **已知文件位置**（如已确定路径的文件）直接用 `grep`/`read` 直接工具，不 delegation
 - **大范围搜索拆成多个并行小任务**，每个小任务限定搜索范围
 - 如果需要跨包搜索，拆成多个并行 agent
+
+<!-- gitnexus:start -->
+# GitNexus — 代码智能
+
+本项目已由 GitNexus 索引，仓库名 **tl_robot_ros2_py**（6297 个符号、7618 条关系、11 条执行流）。使用 GitNexus MCP 工具来理解代码、评估影响并安全导航。
+
+> 若任何 GitNexus 工具提示索引过期，请先在终端执行 `npx gitnexus analyze`。
+
+## 必须遵守
+
+- **编辑任何符号前，务必先运行影响分析。** 在修改函数、类或方法之前，运行 `gitnexus_impact({target: "symbolName", direction: "upstream"})`，并将影响范围（直接调用者、受影响流程、风险级别）报告给用户。
+- **提交前务必运行 `gitnexus_detect_changes()`**，验证你的更改仅影响预期的符号和执行流。
+- **若影响分析返回 HIGH 或 CRITICAL 风险级别，务必先警告用户**，再继续编辑。
+- 探索不熟悉的代码时，使用 `gitnexus_query({query: "concept"})` 查找执行流，而非 grep。它返回按相关性排序的、按流程分组的结果。
+- 需要某个符号的完整上下文（调用者、被调用者、参与的执行流）时，使用 `gitnexus_context({name: "symbolName"})`。
+
+## 严禁事项
+
+- 严禁在未运行 `gitnexus_impact` 的情况下编辑任何函数、类或方法。
+- 严禁忽略影响分析返回的 HIGH 或 CRITICAL 风险警告。
+- 严禁用查找替换的方式重命名符号 — 应使用 `gitnexus_rename`，它理解调用关系图。
+- 严禁在未运行 `gitnexus_detect_changes()` 检查影响范围的情况下提交更改。
+
+## 资源
+
+| 资源 | 用途 |
+|----------|---------|
+| `gitnexus://repo/tl_robot_ros2_py/context` | 代码库概览，检查索引新鲜度 |
+| `gitnexus://repo/tl_robot_ros2_py/clusters` | 所有功能区域 |
+| `gitnexus://repo/tl_robot_ros2_py/processes` | 所有执行流 |
+| `gitnexus://repo/tl_robot_ros2_py/process/{name}` | 逐步执行追踪 |
+
+## CLI
+
+| 任务 | 参阅技能文件 |
+|------|---------------------|
+| 理解架构 / "X 是怎么工作的？" | `.opencode/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| 影响范围 / "改 X 会破坏什么？" | `.opencode/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| 追踪 Bug / "为什么 X 失败了？" | `.opencode/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| 重命名 / 提取 / 拆分 / 重构 | `.opencode/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| 工具、资源、Schema 参考 | `.opencode/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| 索引、状态、清理、Wiki CLI 命令 | `.opencode/skills/gitnexus/gitnexus-cli/SKILL.md` |
+
+<!-- gitnexus:end -->

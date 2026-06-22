@@ -5,3 +5,6 @@ log/
 .sisyphus/
 __pycache__/
 .venv/
+.gitnexus
+.opencode
+.omo

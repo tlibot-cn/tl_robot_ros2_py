@@ -12,9 +12,11 @@
 import time
 import threading
 import math
+import signal
 
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
@@ -34,10 +36,11 @@ import xrobotoolkit_sdk as xrt
 # ===================== 运行时全局状态（非配置项，保持不变）=====================
 pose_data = [0.0, 0.0, 0.3, 0.0, 0.0, 0.0, 1.0]
 grip_data = 0.0
-running = True
 vr_home_pose = None
 base_arm_quat = None
 vr_home_quat = None
+# 使用 threading.Event 替代无保护的 bool 标志，避免竞态条件
+shutdown_event = threading.Event()
 
 data_lock = threading.Lock()
 
@@ -45,15 +48,14 @@ data_lock = threading.Lock()
 # ========== VR 读取线程 ==========
 def device_read_thread():
     """循环读取 VR 手柄位姿和握力数据。"""
-    global pose_data, grip_data, running
+    global pose_data, grip_data
     try:
         xrt.init()
-        print("[INFO] 遥感设备已连接")
     except Exception as e:
         print(f"[ERROR] 遥感设备初始化失败: {e}")
         return
 
-    while running:
+    while not shutdown_event.is_set():
         try:
             pose = xrt.get_right_controller_pose()
             grip = xrt.get_right_grip()
@@ -98,20 +100,6 @@ def quat_inverse(q):
     """四元数共轭（逆，假设 q 为单位四元数）。"""
     w, x, y, z = q
     return [w, -x, -y, -z]
-
-
-# ========== 关节安全检查函数（独立函数，接收限位参数）==========
-def clamp_joints(joints, joint_limits):
-    """将关节角裁剪到硬限位范围内。
-
-    Args:
-        joints: 关节角度列表（度）
-        joint_limits: 关节限位列表 [[min, max], ...]
-
-    Returns:
-        裁剪后的关节角度列表
-    """
-    return [max(low, min(high, val)) for val, (low, high) in zip(joints, joint_limits)]
 
 
 # ========== ROS2 遥操作节点 ==========
@@ -268,6 +256,12 @@ class ArmTeleopNode(Node):
 
         self.get_logger().info(f"遥操作节点启动（{self.arm_axis_mode_}轴模式）")
 
+        # --- 等待 tl_driver 服务就绪 ---
+        self.get_logger().info("等待 tl_driver 服务就绪...")
+        if not self.wait_for_services(timeout=15.0):
+            self.get_logger().fatal("tl_driver 服务不可用，请先启动 tl_driver")
+            raise RuntimeError("tl_driver 服务不可用，请先启动 tl_driver")
+
     # -------- 话题回调 --------
     def _tcp_pose_cb(self, msg: CartesianPose):
         """缓存最新 TCP 位姿。"""
@@ -341,17 +335,65 @@ class ArmTeleopNode(Node):
 
         return True
 
-    def close_servoj(self):
-        """关闭 ServoJ 模式。"""
+    def close_servoj_async_call(self):
+        """异步发起关闭 ServoJ 请求，立即返回 Future。
+
+        调用者需通过 spin_until_future_complete 等待 Future 完成，
+        并检查 future.result() 来确认 ServoJ 是否已关闭。
+
+        Returns:
+            rclpy Future 对象，若请求发送失败则返回 None。
+        """
         req = Trigger.Request()
         try:
-            result = self.close_servoj_client.call(req)
-            if result.success:
-                self.get_logger().info("ServoJ 已关闭")
-            else:
-                self.get_logger().warning(f"关闭 ServoJ 失败: {result.message}")
+            future = self.close_servoj_client.call_async(req)
+            return future
         except Exception as e:
-            self.get_logger().error(f"关闭 ServoJ 异常: {e}")
+            self.get_logger().error(f"发起关闭 ServoJ 请求异常: {e}")
+            return None
+
+    def close_servoj(self, timeout_sec: float = 3.0) -> bool:
+        """关闭 ServoJ 模式（便捷同步版本，带超时保护）。
+
+        内部通过 close_servoj_async_call() 发起异步请求，
+        再用临时 SingleThreadedExecutor spin 等待结果。
+
+        注意：调用前必须确保本 node 未被其他 executor 持有
+        （即已 executor.remove_node()），否则 add_node 会失败。
+
+        Args:
+            timeout_sec: 等待 ServoJ 关闭完成的超时时间（秒）。
+
+        Returns:
+            True 表示 ServoJ 已成功关闭。
+            False 表示超时、请求失败或服务端返回失败。
+            调用者可通过日志确认具体原因。
+        """
+        future = self.close_servoj_async_call()
+        if future is None:
+            return False
+
+        tmp_executor = SingleThreadedExecutor()
+        tmp_executor.add_node(self)
+        try:
+            tmp_executor.spin_until_future_complete(
+                future, timeout_sec=timeout_sec)
+        finally:
+            tmp_executor.remove_node(self)
+
+        if not future.done():
+            self.get_logger().warning(
+                f"关闭 ServoJ 超时 ({timeout_sec}s)，可能未成功关闭")
+            return False
+
+        result = future.result()
+        if result is not None and result.success:
+            self.get_logger().info("ServoJ 已成功关闭 ✓")
+            return True
+        else:
+            msg = result.message if result else "无响应"
+            self.get_logger().warning(f"关闭 ServoJ 返回失败: {msg}")
+            return False
 
     # -------- RPY → 四元数（通过服务） --------
     def call_get_rpy2quat(self, rx: float, ry: float, rz: float):
@@ -372,9 +414,6 @@ class ArmTeleopNode(Node):
         """调用 tl_driver 的 coord_transform 服务做运动学逆解。
 
         将直角坐标系位姿（x/y/z mm，rx/ry/rz rad）转换为关节角度（度），
-        通过 reference_pos 传入当前关节角作为参考，确保 IK 收敛到一致的构型，
-        避免 6 轴多解时随机选取到 180° 等极端构型。
-
         返回关节角列表（长度 = arm_axis_mode），失败返回 None。
         """
         req = CoordTransform.Request()
@@ -448,18 +487,18 @@ class ArmTeleopNode(Node):
                 for val, (low, high) in zip(joints, self.joint_limits_)]
 
 
-# ========== 主控制循环（100Hz）==========
-def main_control_loop(node: ArmTeleopNode):
-    """主遥操作控制循环：读取 VR 位姿 → IK → 关节下发。
+# ========== 纯控制循环（100Hz）==========
+def control_loop_func(node: ArmTeleopNode):
+    """遥操作控制循环：读 VR 位姿 → IK → 关节下发。
 
     所有可调参数通过 node 实例属性读取（由 ROS2 参数系统填充）。
     """
-    global running, vr_home_pose, base_arm_quat, vr_home_quat
+    global vr_home_pose, base_arm_quat, vr_home_quat
 
     base_x = base_y = base_z = 0.0
     base_rx = base_ry = base_rz = 0.0
 
-    while running:
+    while not shutdown_event.is_set():
         t0 = time.time()
         with data_lock:
             pose = pose_data.copy()
@@ -566,44 +605,143 @@ def main_control_loop(node: ArmTeleopNode):
             time.sleep(0.01 - dt)
 
 
+def main_control_loop(node: ArmTeleopNode):
+    """遥操作编排：初始化 ServoJ → 控制循环 → 关闭 ServoJ。
+
+    在子线程中运行，spin 在主线程。初始化时的服务调用通过
+    spin_until_future_complete 的临时 executor 处理。
+    """
+    # 初始化 ServoJ（模式 → 速度 → 开启）
+    node.get_logger().info("正在初始化 ServoJ...")
+    if not node.init_servoj():
+        node.get_logger().fatal("ServoJ 初始化失败")
+        return
+
+    node.get_logger().info(
+        f"{node.arm_axis_mode_}轴机械臂就绪，开始遥操作（已加固奇异点）")
+
+    # 运行控制循环（阻塞直到 shutdown_event 被设置）
+    control_loop_func(node)
+
+    # 注意：ServoJ 关闭已移至 main() 中，
+    # 在 rclpy shutdown 之前由主线程统一处理，
+    # 确保关闭请求能被正确发送和处理。
+
+
 # ========== 主入口 ==========
 def main():
-    global running
+    """主入口：spin 在主线程，遥操作编排在子线程。
 
+    线程分工：
+      - 主线程：手动 spin_once 循环（处理话题/定时器/服务回调）
+      - 编排子线程：main_control_loop（init → control_loop）
+      - VR 读取子线程：device_read_thread
+
+    关键设计变更：
+      1. 使用 SingleThreadedExecutor.spin_once() 替代 rclpy.spin()
+      2. 在初始化完成之后才覆盖 SIGINT handler，阻止 rclpy 自动 shutdown
+      初始化阶段（wait_for_services 等）仍由 rclpy 默认 handler 处理，
+      避免阻塞式 C 调用期间信号中断导致 rclpy 内部状态损坏。
+      初始化完毕后接管 SIGINT，确保退出时能在 shutdown 之前
+      执行 close_servoj() 等清理工作。
+    """
     rclpy.init()
-    node = ArmTeleopNode()
+
+    try:
+        node = ArmTeleopNode()
+    except KeyboardInterrupt:
+        # rclpy 默认 SIGINT handler 已调用 shutdown，无需再调
+        return
+    except (RuntimeError, ValueError):
+        rclpy.shutdown()
+        return
 
     # 启动 VR 读取线程
     vr_thread = threading.Thread(target=device_read_thread, daemon=True)
     vr_thread.start()
 
-    # 启动 ROS2 spin 线程
-    ros_thread = threading.Thread(target=lambda: rclpy.spin(node), daemon=True)
-    ros_thread.start()
+    # 启动遥操作编排子线程（内部完成 init_servoj → 控制循环）
+    ctrl_thread = threading.Thread(
+        target=main_control_loop, args=(node,), daemon=True)
+    ctrl_thread.start()
+
+    # --- 初始化完毕，现在接管 SIGINT，阻止 rclpy 自动 shutdown ---
+    # rclpy.init() 注册的 SIGINT handler 会自动调用 rclpy.shutdown()，
+    # 这会导致后续 close_servoj 等清理无法执行。
+    # 必须在所有阻塞初始化（已在 __init__ 中完成）之后才接管，
+    # 否则 SIGINT 在 C 调用期间会导致 rclpy 内部状态损坏。
+    shutdown_requested = False
+
+    def _handle_sigint(sig, frame):
+        nonlocal shutdown_requested
+        shutdown_requested = True
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+
+    # 手动 spin_once 循环：替代 rclpy.spin()，
+    # 通过 shutdown_requested 标志控制退出时机
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
 
     try:
-        # 等待 tl_driver 服务就绪
-        print("[INFO] 等待 tl_driver 服务就绪...")
-        if not node.wait_for_services(timeout=15.0):
-            print("[ERROR] tl_driver 服务不可用，请先启动 tl_driver")
-            return
+        while rclpy.ok() and not shutdown_requested:
+            executor.spin_once(timeout_sec=0.05)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # 某些环境下 spin_once 仍可能抛出这些异常
+        pass
 
-        # 初始化 ServoJ（模式 → 速度 → 开启）
-        print("[INFO] 正在初始化 ServoJ...")
-        if not node.init_servoj():
-            print("[ERROR] ServoJ 初始化失败")
-            return
+    # ===== 清理阶段：rclpy 此时仍然存活 =====
+    # 所有步骤均有超时保护，确保总退出时间可控，避免被 launch 系统 SIGKILL 强杀
 
-        print(f"[INFO] {node.arm_axis_mode_}轴机械臂就绪，开始遥操作（已加固奇异点）")
-        main_control_loop(node)
+    # Phase 1: 停止控制循环
+    # 信号通知所有子线程退出：控制循环停止下发指令，VR 线程准备断开设备
+    shutdown_event.set()
+    node.get_logger().info("等待控制循环停止...")
+    ctrl_thread.join(timeout=3.0)
+    if ctrl_thread.is_alive():
+        node.get_logger().warning("控制循环线程未能在 3s 内退出")
+    else:
+        node.get_logger().info("控制循环已退出")
 
-    except KeyboardInterrupt:
-        print("\n[INFO] Ctrl+C 退出")
-    finally:
-        running = False
-        node.close_servoj()
-        rclpy.shutdown()
-        print("[INFO] 程序结束")
+    # Phase 2: 关闭 ServoJ（异步 + 超时等待，可确认是否关闭成功）
+    # 此时 executor 仍持有 node，直接用它 spin 等待异步结果
+    close_future = node.close_servoj_async_call()
+    if close_future is not None:
+        executor.spin_until_future_complete(close_future, timeout_sec=3.0)
+        if close_future.done():
+            result = close_future.result()
+            if result is not None and result.success:
+                node.get_logger().info("ServoJ 已成功关闭 ✓")
+            else:
+                msg = result.message if result else "无响应"
+                node.get_logger().warning(f"ServoJ 关闭返回失败: {msg}")
+        else:
+            node.get_logger().warning(
+                "ServoJ 关闭超时（3s），可能未成功关闭")
+    else:
+        node.get_logger().warning("无法发起关闭 ServoJ 请求")
+
+    # Phase 3: 解除 executor 对 node 的绑定
+    executor.remove_node(node)
+
+    # Phase 4: 清理 VR 设备
+    # VR 线程可能在 xrt.get_right_controller_pose() 阻塞 C 调用中，
+    # 超时后由主线程兜底调用 xrt.close() 确保 SDK 资源释放
+    vr_thread.join(timeout=2.0)
+    if vr_thread.is_alive():
+        node.get_logger().warning(
+            "VR 读取线程未能在 2s 内退出，将在主线程中清理 SDK")
+        try:
+            xrt.close()
+            print("[INFO] 遥感设备已在主线程中断开")
+        except Exception as e:
+            print(f"[WARN] 主线程清理遥感设备异常: {e}")
+    else:
+        print("[INFO] 遥感设备已正常断开")
+
+    # Phase 5: 最后关闭 rclpy
+    rclpy.shutdown()
+    print("[INFO] 程序结束")
 
 
 if __name__ == '__main__':
