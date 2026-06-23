@@ -23,7 +23,7 @@ def generate_launch_description():
     tl_teleop_f710_share = get_package_share_directory('tl_teleop_f710')
     tl_gazebo_share = get_package_share_directory('tl_gazebo')
     config_path = os.path.join(
-        tl_teleop_f710_share, 'config', 'tl_teleop_tcb710.yaml')
+        tl_teleop_f710_share, 'config', 'tl_teleop_tcb710_sim.yaml')
 
     return LaunchDescription([
         IncludeLaunchDescription(

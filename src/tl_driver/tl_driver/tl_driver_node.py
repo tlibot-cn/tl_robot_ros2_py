@@ -1487,7 +1487,7 @@ class TLArmNode(Node):
 
             step_size = float(msg.step_size)
             if step_size <= 0.0:
-                step_size = 5.0  # 默认步长 5mm
+                step_size = 2.0  # 默认步长 2mm
 
             N = max(1, int(math.ceil(dist / step_size)))
             self.get_logger().info(f"[ServoL] received: dist={dist:.1f}mm, step={step_size}, divided into {N} points")
@@ -1503,7 +1503,7 @@ class TLArmNode(Node):
                 ref_pos.append(0.0)
 
             # ========= 4. 插值 + IK + servoj 发送 =========
-            period = 0.01  # 100Hz
+            period = 0.004  # 250Hz
             next_time = time.perf_counter()
 
             for i in range(1, N + 1):

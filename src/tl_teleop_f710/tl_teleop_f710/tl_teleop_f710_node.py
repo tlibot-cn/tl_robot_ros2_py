@@ -88,6 +88,8 @@ class F710TeleopNode(Node):
         """声明所有 ROS2 参数（与 YAML 配置文件对应）。"""
         # 控制频率
         self.declare_parameter('control_rate', 20.0)
+        # 仿真模式（true=跳过 servoj 初始化，用于 Gazebo 仿真）
+        self.declare_parameter('simulation_mode', False)
         # 运动速度（0-100，对应机械臂实际速度范围）
         self.declare_parameter('speed_default', 50.0)
         self.declare_parameter('speed_min', 5.0)
@@ -128,6 +130,7 @@ class F710TeleopNode(Node):
     def _load_parameters(self):
         """将参数值读取到实例变量。"""
         self.control_rate_ = self.get_parameter('control_rate').value
+        self.simulation_mode_ = self.get_parameter('simulation_mode').value
         self.speed_default_ = self.get_parameter('speed_default').value
         self.speed_min_ = self.get_parameter('speed_min').value
         self.speed_max_ = self.get_parameter('speed_max').value
@@ -186,7 +189,14 @@ class F710TeleopNode(Node):
     #              3=等待open_servoj 4=完成
 
     def _init_servoj(self):
-        """ServoJ 初始化状态机：每步非阻塞，由定时器驱动。"""
+        """ServoJ 初始化状态机：每步非阻塞，由定时器驱动。
+
+        仿真模式下直接跳过，不连接 tl_driver。
+        """
+        if self.simulation_mode_:
+            self._init_state = 4
+            return
+
         state = self._init_state
 
         if state == 4:

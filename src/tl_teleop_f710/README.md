@@ -14,10 +14,12 @@
 
 各型号有独立的配置文件和启动文件：
 
-| 型号 | 轴数 | 配置文件 | 启动文件 |
-|------|------|----------|----------|
-| TCB605 | 6 轴 | `config/tl_teleop_tcb605.yaml` | `tl_teleop_tcb605.launch.py` |
-| TCB710 | 7 轴 | `config/tl_teleop_tcb710.yaml` | `tl_teleop_tcb710.launch.py` |
+| 型号 | 轴数 | 真机配置 | 仿真配置 | 真机启动 | 仿真启动 |
+|------|------|----------|----------|----------|----------|
+| TCB605 | 6 轴 | `tcb605.yaml` | `tcb605_sim.yaml` | `tcb605.launch.py` | `tcb605_gazebo.launch.py` |
+| TCB610 | 6 轴 | `tcb605.yaml` | `tcb605_sim.yaml` | `tcb605.launch.py` | `tcb605_gazebo.launch.py` |
+| TCB705 | 7 轴 | `tcb710.yaml` | `tcb710_sim.yaml` | `tcb710.launch.py` | `tcb710_gazebo.launch.py` |
+| TCB710 | 7 轴 | `tcb710.yaml` | `tcb710_sim.yaml` | `tcb710.launch.py` | `tcb710_gazebo.launch.py` |
 
 ## 环境要求
 
@@ -74,7 +76,15 @@ ros2 launch tl_teleop_f710 tl_teleop_tcb605.launch.py
 # TCB705 / TCB710（7 轴）
 ros2 launch tl_teleop_f710 tl_teleop_tcb710.launch.py
 ```
-注意：启动手柄遥操作后，需要按一下“START”键，才能开始控制
+
+真机模式下节点会自动完成以下初始化：
+1. 等待 tl_driver 服务就绪
+2. 设置运行模式为远程模式
+3. 设置 ServoJ 运动速度
+4. 开启关节跟踪模式（ServoJ）
+5. 输出 ✅ 提示，遥操作就绪
+6. 需要按一下手柄上的“START”键，开始手柄遥控机械臂
+
 如果手柄在非默认路径，可指定设备：
 
 ```bash
@@ -110,22 +120,42 @@ ros2 launch tl_teleop_f710 tl_teleop_tcb710_gazebo.launch.py
 
 ## 参数配置
 
-每种臂型有独立的配置文件（如 `config/tl_teleop_tcb605.yaml`），可按需修改：
+以tcb605机械臂为例，真机和仿真使用独立的配置文件：
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `control_rate` | 20.0 | 控制循环频率 (Hz) |
-| `speed_default` | 50.0 | 默认运动速度 (0-100) |
-| `speed_min` | 5.0 | 最小速度 |
-| `speed_max` | 100.0 | 最大速度 |
-| `speed_step` | 5.0 | 十字键每按一次速度变化量 |
-| `pos_sensitivity` | 50.0 | 位置灵敏度 (mm/s，速度=100 时) |
-| `rot_sensitivity` | 1.0 | 姿态灵敏度 (rad/s，速度=100 时) |
-| `step_size` | 2.0 | servol 插值步长 (mm) |
-| `deadzone` | 0.15 | 摇杆死区 |
-| `initial_pose` | 见各 YAML | 回零后的初始位姿 |
+| 模式 | 配置文件 | 特点 |
+|------|----------|------|
+| 真机 | `config/tl_teleop_tcb605.yaml` | 含 ServoJ 初始化参数，灵敏度较高 |
+| 仿真 | `config/tl_teleop_tcb605_sim.yaml` | 跳过 ServoJ 初始化，灵敏度偏低更平滑 |
 
-速度范围 0-100，对应机械臂实际速度百分比，十字键上下调节，调节步长 5。
+### 参数说明
+
+| 参数 | 真机默认值 | 仿真默认值 | 说明 |
+|------|-----------|-----------|------|
+| `control_rate` | 20.0 | 20.0 | 控制循环频率 (Hz) |
+| `simulation_mode` | false | true | true 时跳过 ServoJ 初始化 |
+| `speed_default` | 50.0 | 50.0 | 默认运动速度 (0-100) |
+| `speed_min` | 5.0 | 5.0 | 最小速度 |
+| `speed_max` | 100.0 | 100.0 | 最大速度 |
+| `speed_step` | 5.0 | 5.0 | 十字键每按一次速度变化量 |
+| `pos_sensitivity` | 50.0 | 30.0 | 位置灵敏度 (mm/s，速度=100 时) |
+| `rot_sensitivity` | 1.0 | 0.8 | 姿态灵敏度 (rad/s，速度=100 时) |
+| `step_size` | 2.0 | 1.0 | servol 插值步长 (mm) |
+| `deadzone` | 0.15 | 0.15 | 摇杆死区 |
+| `initial_pose` | [230,0,359,3.14,0,0] | [230,0,359,3.14,0,0] | 回零后的初始位姿 |
+| `servo_speed` | 25.0 | — | ServoJ 运动速度（仅真机） |
+
+速度范围 0-100，十字键上下调节，步长 5。可通过增大 `pos_sensitivity` 来整体提高运动速度。
+
+### 速度调优
+
+末端运动速度估算公式：
+
+```
+速度 ≈ 摇杆值 × pos_sensitivity × (speed_value / 100)
+```
+
+- 调大 `pos_sensitivity` → 整体变快
+- 调小 `pos_sensitivity` → 整体变慢
 
 ## 坐标系
 
@@ -136,14 +166,14 @@ ros2 launch tl_teleop_f710 tl_teleop_tcb710_gazebo.launch.py
 ## 真机架构
 
 ```
-F710 手柄 → joy_node → /joy 话题 → tl_teleop_f710_node
-                                        ↓
-                              /tl_driver/set_servol_pos 话题
-                                        ↓
-                                  tl_driver 节点
-                                  （IK + servoj 执行）
-                                        ↓
-                                  机械臂实际运动
+F710 手柄 → joy_node → /joy → tl_teleop_f710_node
+                                   ↓
+                         /tl_driver/set_servol_pos
+                                   ↓
+                              tl_driver 节点
+                    （_tl_host.so SWIG IK + servoj 执行）
+                                   ↓
+                              机械臂实际运动
 ```
 
 ## 仿真架构
@@ -163,8 +193,9 @@ F710 手柄 → joy_node → /joy → tl_teleop_f710_node
 
 ## 注意事项
 
-1. 使用前请确保机械臂已上电并处于远程模式
+1. 真机使用前请确保机械臂已上电并处于远程模式（节点会自动设置）
 2. 回零前请确认周围无障碍物
 3. 速度范围 0-100，建议从 50 开始适应后再调高
 4. 仿真模式需安装 Python 库：`pip3 install pinocchio`
-5. 长距离移动时建议使用较大 step_size 以提高响应
+5. 长距离移动时建议使用较大 `step_size` 以提高响应
+6. 真机与仿真参数独立配置在各自的 YAML 文件中，互不干扰
