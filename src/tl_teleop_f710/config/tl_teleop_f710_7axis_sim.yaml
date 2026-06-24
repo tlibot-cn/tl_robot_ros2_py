@@ -4,7 +4,10 @@
     simulation_mode: true
 
     # ========== 控制频率 ==========
-    control_rate: 20.0
+    control_rate: 100.0
+
+    # ========== 机械臂型号 ==========
+    arm_type: tcb710
 
     # ========== 运动速度（0-100）==========
     speed_default: 50.0
@@ -13,15 +16,15 @@
     speed_step: 5.0
 
     # ========== 运动灵敏度 ==========
-    pos_sensitivity: 30.0
-    rot_sensitivity: 0.8
+    pos_sensitivity: 200.0
+    rot_sensitivity: 2.0
     step_size: 1.0
 
     # ========== 摇杆死区 ==========
     deadzone: 0.15
 
     # ========== 初始目标位姿（7 轴 TCB710）==========
-    initial_pose: [300.0, 0.0, 450.0, 3.14, 0.0, 0.0]
+    home_joints: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     # ========== F710 轴映射 ==========
     axis_left_x: 1

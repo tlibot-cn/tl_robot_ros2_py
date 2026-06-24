@@ -1,9 +1,10 @@
-"""天链机械臂 TCB710 + F710 手柄遥操作 — Gazebo 仿真启动文件。
+"""天链机械臂 7 轴 + F710 手柄遥操作 — 通用 Gazebo 仿真启动文件。
 
 IK 由仿真桥接节点内部使用 Pinocchio 本地求解，无需 MoveIt2。
 
 用法：
-  ros2 launch tl_teleop_f710 tl_teleop_tcb710_gazebo.launch.py
+  ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb710
+  ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb710 joy_dev:=/dev/input/js1
 """
 
 import os
@@ -13,7 +14,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     TimerAction,
 )
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -22,15 +23,31 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     tl_teleop_f710_share = get_package_share_directory('tl_teleop_f710')
     tl_gazebo_share = get_package_share_directory('tl_gazebo')
-    config_path = os.path.join(
-        tl_teleop_f710_share, 'config', 'tl_teleop_tcb710_sim.yaml')
+
+    arm_type = LaunchConfiguration('arm_type')
+    joy_dev = LaunchConfiguration('joy_dev')
+
+    config_path = os.path.join(tl_teleop_f710_share, 'config', 'tl_teleop_f710_7axis_sim.yaml')
+
+    # 通用 7 轴 Gazebo 仿真启动
+    gazebo_launch_path = PathJoinSubstitution([
+        tl_gazebo_share, 'launch',
+        'gazebo_7axis_f710_sim.launch.py',
+    ])
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'arm_type',
+            default_value='tcb710',
+            description='机械臂型号，如 tcb710、tcb610v、tcb705v',
+        ),
+        DeclareLaunchArgument(
+            'joy_dev',
+            default_value='/dev/input/js0',
+            description='F710 手柄设备路径',
+        ),
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(
-                    tl_gazebo_share, 'launch', 'gazebo_tcb710_f710_sim.launch.py')
-            ),
+            PythonLaunchDescriptionSource(gazebo_launch_path),
         ),
         TimerAction(
             period=3.0,
@@ -40,8 +57,7 @@ def generate_launch_description():
                     executable='joy_node',
                     name='joy_node',
                     parameters=[{
-                        'dev': LaunchConfiguration(
-                            'joy_dev', default='/dev/input/js0'),
+                        'dev': joy_dev,
                         'deadzone': 0.1,
                         'autorepeat_rate': 30.0,
                     }],
@@ -56,7 +72,7 @@ def generate_launch_description():
                     executable='tl_teleop_f710_node',
                     name='tl_teleop_f710_node',
                     output='screen',
-                    parameters=[config_path],
+                    parameters=[config_path, {'arm_type': arm_type}],
                 ),
             ],
         ),
@@ -68,6 +84,7 @@ def generate_launch_description():
                     executable='tl_teleop_f710_sim_bridge',
                     name='tl_teleop_f710_sim_bridge',
                     output='screen',
+                    parameters=[{'arm_type': arm_type}],
                 ),
             ],
         ),

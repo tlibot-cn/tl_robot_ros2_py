@@ -1,8 +1,10 @@
-"""天链机械臂 TCB605 + F710 手柄遥操作 — 真机启动文件。
+"""天链机械臂 7 轴 + F710 手柄遥操作 — 通用真机启动文件。
+
+自动加载 config/tl_teleop_f710_7axis.yaml 配置。
 
 用法：
-  ros2 launch tl_teleop_f710 tl_teleop_tcb605.launch.py
-  ros2 launch tl_teleop_f710 tl_teleop_tcb605.launch.py joy_dev:=/dev/input/js1
+  ros2 launch tl_teleop_f710 tl_teleop_f710_7axis.launch.py
+  ros2 launch tl_teleop_f710 tl_teleop_f710_7axis.launch.py joy_dev:=/dev/input/js1
 """
 
 import os
@@ -15,11 +17,16 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     pkg_share = get_package_share_directory('tl_teleop_f710')
-    config_path = os.path.join(pkg_share, 'config', 'tl_teleop_tcb605.yaml')
+
+    joy_dev = LaunchConfiguration('joy_dev')
+
+    config_path = os.path.join(pkg_share, 'config', 'tl_teleop_f710_7axis.yaml')
 
     return LaunchDescription([
+
         DeclareLaunchArgument(
-            'joy_dev', default_value='/dev/input/js0',
+            'joy_dev',
+            default_value='/dev/input/js0',
             description='F710 手柄设备路径',
         ),
         Node(
@@ -27,7 +34,7 @@ def generate_launch_description():
             executable='joy_node',
             name='joy_node',
             parameters=[{
-                'dev': LaunchConfiguration('joy_dev'),
+                'dev': joy_dev,
                 'deadzone': 0.1,
                 'autorepeat_rate': 30.0,
             }],

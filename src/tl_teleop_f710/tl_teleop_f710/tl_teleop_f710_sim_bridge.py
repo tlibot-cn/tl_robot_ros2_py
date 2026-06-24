@@ -36,16 +36,15 @@ class ServolSimBridge(Node):
     使用 Pinocchio 做 IK 求解，不依赖 MoveIt2。
     """
 
-    JOINT_NAMES = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
-    BASE_LINK = 'link0'
-    TIP_LINK = 'link6'
-    TIP_JOINT = 'joint6'
-    NDOF = 6
+    # 以下由 _init_pinocchio 根据实际模型动态设置
+    ndof = None
+    joint_names = None
 
     def __init__(self):
         super().__init__('tl_teleop_f710_sim_bridge')
 
         # ===== 参数 =====
+        self.declare_parameter('arm_type', 'tcb605')
         self.declare_parameter('position_controller_topic',
                                '/tcb_group_position_controller/commands')
         self.declare_parameter('joint_state_topic', '/joint_states')
@@ -53,6 +52,7 @@ class ServolSimBridge(Node):
         self.declare_parameter('ik_max_iter', 200)
         self.declare_parameter('ik_dt', 0.5)
 
+        self._arm_type = self.get_parameter('arm_type').value
         self._pos_ctrl_topic = self.get_parameter('position_controller_topic').value
         self._js_topic = self.get_parameter('joint_state_topic').value
         self._ik_eps = self.get_parameter('ik_eps').value
@@ -62,11 +62,12 @@ class ServolSimBridge(Node):
         # ===== 初始化 Pinocchio 运动学模型 =====
         self._model = None
         self._data = None
+        self._tip_joint_id = None
         self._tip_frame_id = None
         self._init_pinocchio()
 
         # ===== 内部状态 =====
-        self._current_joints = np.zeros(self.NDOF)  # 最新关节角度（弧度）
+        self._current_joints = np.zeros(self.ndof)  # 最新关节角度（弧度）
         self._joints_lock = threading.Lock()
 
         # ===== 回调组 =====
@@ -95,16 +96,15 @@ class ServolSimBridge(Node):
 
     def _init_pinocchio(self):
         """从 URDF 文件加载 Pinocchio 模型。"""
-        # 查找 URDF 文件：优先找描述包中的文件
+        arm_type = self._arm_type
         urdf_paths = [
             os.path.expanduser(
-                '~/tl_robot_ros2_py/src/tl_description/urdf/tcb605.urdf'),
+                f'~/tl_robot_ros2_py/src/tl_description/urdf/{arm_type}.urdf'),
         ]
-        # 尝试从 ROS 包中查找
         try:
             from ament_index_python.packages import get_package_share_directory
             pkg_path = get_package_share_directory('tl_description')
-            urdf_paths.insert(0, os.path.join(pkg_path, 'urdf', 'tcb605.urdf'))
+            urdf_paths.insert(0, os.path.join(pkg_path, 'urdf', f'{arm_type}.urdf'))
         except Exception:
             pass
 
@@ -122,13 +122,20 @@ class ServolSimBridge(Node):
             raise FileNotFoundError(f'URDF not found: {urdf_paths}')
 
         self._data = self._model.createData()
-        self._tip_joint_id = self._model.getJointId(self.TIP_JOINT)
-        self._tip_frame_id = self._model.getFrameId(self.TIP_LINK)
+        # 根据模型动态确定关节数和末端名称
+        self.ndof = self._model.nq
+        tip_joint_name = f'joint{self.ndof}'
+        tip_link_name = f'link{self.ndof}'
+        self.joint_names = [f'joint{i+1}' for i in range(self.ndof)]
+        self._tip_joint_id = self._model.getJointId(tip_joint_name)
+        self._tip_frame_id = self._model.getFrameId(tip_link_name)
+        # 重新初始化当前关节缓存
+        self._current_joints = np.zeros(self.ndof)
         self.get_logger().info(
             f'Pinocchio 模型加载完成: {self._model.name}, '
             f'nq={self._model.nq}, njoints={self._model.njoints}, '
-            f'tip_joint={self.TIP_JOINT} id={self._tip_joint_id}, '
-            f'tip_frame={self.TIP_LINK} id={self._tip_frame_id}')
+            f'tip_joint={tip_joint_name} id={self._tip_joint_id}, '
+            f'tip_frame={tip_link_name} id={self._tip_frame_id}')
 
     # -------- IK 求解（阻尼伪逆法） --------
 
@@ -138,10 +145,10 @@ class ServolSimBridge(Node):
         Args:
             x, y, z: 目标位置 (m)
             rx, ry, rz: 目标姿态欧拉角 (rad)
-            q_guess: 初始关节角 (ndarray, 6 维)，None 则用当前关节角
+            q_guess: 初始关节角 (ndarray, ndof 维)，None 则用当前关节角
 
         Returns:
-            q: 关节角 (ndarray, 6 维)，失败返回 None
+            q: 关节角 (ndarray, ndof 维)，失败返回 None
         """
         if q_guess is None:
             with self._joints_lock:
@@ -189,12 +196,12 @@ class ServolSimBridge(Node):
         """缓存最新关节状态。"""
         positions = {}
         for i, name in enumerate(msg.name):
-            if name in self.JOINT_NAMES:
+            if name in self.joint_names:
                 positions[name] = msg.position[i]
-        if len(positions) == self.NDOF:
+        if len(positions) == self.ndof:
             with self._joints_lock:
                 self._current_joints = np.array([
-                    positions[name] for name in self.JOINT_NAMES
+                    positions[name] for name in self.joint_names
                 ])
 
     def _servol_callback(self, msg):

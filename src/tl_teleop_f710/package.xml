@@ -9,7 +9,7 @@
     基于笛卡尔空间伺服（servol）实现直观的末端位置控制。
     支持 6 轴和 7 轴机械臂型号。
   </description>
-  <maintainer email="hongchao.shi@foxmail.com">root</maintainer>
+  <maintainer email="example@mail.com">root</maintainer>
   <license>Proprietary</license>
 
   <depend>rclpy</depend>
@@ -17,6 +17,7 @@
   <depend>tl_ros2_interface</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

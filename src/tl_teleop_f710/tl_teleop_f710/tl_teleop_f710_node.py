@@ -20,13 +20,22 @@
   - tl_driver（set_servol_pos 话题）
 """
 
+import math
+import os
 import time
+
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from std_srvs.srv import Trigger
 from tl_ros2_interface.msg import ServolMove
-from tl_ros2_interface.srv import SetCurrentMode, SetSpeed, OpenServoJ
+from tl_ros2_interface.srv import (
+    CoordTransform,
+    SetCurrentMode,
+    SetSpeed,
+    OpenServoJ,
+)
 
 
 class F710TeleopNode(Node):
@@ -48,7 +57,7 @@ class F710TeleopNode(Node):
         self._last_a_press = 0.0         # A 键上次按下时间
         self._last_b_press = 0.0         # B 键上次按下时间
         self.speed_value_ = self.speed_default_  # 当前运动速度 0-100
-        self.target_pose_ = list(self.initial_pose_)    # [x, y, z, rx, ry, rz]
+        self.target_pose_ = None  # [x, y, z, rx, ry, rz] — 由 FK 初始化，就绪前不发布
 
         # ==================== 订阅 ====================
         self.joy_sub_ = self.create_subscription(
@@ -67,8 +76,24 @@ class F710TeleopNode(Node):
             OpenServoJ, '/tl_driver/open_servoj')
         self._close_servoj_client = self.create_client(
             Trigger, '/tl_driver/close_servoj')
+        self._coord_transform_client = self.create_client(
+            CoordTransform, '/tl_driver/coord_transform')
         self._init_state = 0        # ServoJ 初始化状态机：0=等待服务 1~3=进行中 4=完成
         self._init_future = None    # 当前异步服务调用的 future
+
+        # ==================== FK（关节→笛卡尔）初始化 ====================
+        self._fk_ready = False
+        self._fk_model = None
+        self._fk_data = None
+        self._fk_tip_frame = None
+        if self.simulation_mode_:
+            self._init_fk_pinocchio()
+            # 仿真模式：FK 已就绪，用 home_joints 算初始位姿
+            init_pose = self._home_joints_to_pose()
+            if init_pose is not None:
+                self.target_pose_ = list(init_pose)
+                self.get_logger().info(
+                    f'初始位姿（FK）: {[f"{v:.1f}" for v in self.target_pose_]}')
 
         # ==================== ServoJ 初始化定时器 ====================
         self.create_timer(1.0, self._init_servoj)
@@ -106,8 +131,10 @@ class F710TeleopNode(Node):
         self.declare_parameter('step_size', 2.0)
         # 摇杆死区
         self.declare_parameter('deadzone', 0.15)
-        # 初始位姿
-        self.declare_parameter('initial_pose', [0.0, 0.0, 300.0, 0.0, 0.0, 0.0])
+        # 机械臂型号（仿真模式 FK 用）
+        self.declare_parameter('arm_type', 'tcb605')
+        # 回零关节角度（度）
+        self.declare_parameter('home_joints', [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         # 轴映射（DirectInput 模式）
         self.declare_parameter('axis_left_x', 0)
         self.declare_parameter('axis_left_y', 1)
@@ -144,7 +171,8 @@ class F710TeleopNode(Node):
         self.rot_sensitivity_ = self.get_parameter('rot_sensitivity').value
         self.step_size_ = self.get_parameter('step_size').value
         self.deadzone_ = self.get_parameter('deadzone').value
-        self.initial_pose_ = list(self.get_parameter('initial_pose').value)
+        self.home_joints_ = list(self.get_parameter('home_joints').value)
+        self.arm_type_ = self.get_parameter('arm_type').value
 
         self.axis_left_x_ = int(self.get_parameter('axis_left_x').value)
         self.axis_left_y_ = int(self.get_parameter('axis_left_y').value)
@@ -178,11 +206,97 @@ class F710TeleopNode(Node):
 
     def _publish_servol(self):
         """发布当前目标位姿到 servol 话题。"""
+        if self.target_pose_ is None:
+            return  # FK 尚未就绪，跳过发布
         msg = ServolMove()
         msg.target_pose = [float(v) for v in self.target_pose_]
         msg.step_size = self.step_size_
         msg.coord = 1  # 基座标系
         self.servol_pub_.publish(msg)
+
+    # ==================== FK（关节→笛卡尔，仿真模式用 Pinocchio）====================
+
+    def _init_fk_pinocchio(self):
+        """加载 Pinocchio 模型用于 FK（仿真模式）。"""
+        arm_type = self.arm_type_
+        try:
+            import pinocchio
+            urdf_paths = [
+                os.path.expanduser(
+                    f'~/tl_robot_ros2_py/src/tl_description/urdf/{arm_type}.urdf'),
+            ]
+            try:
+                from ament_index_python.packages import get_package_share_directory
+                pkg = get_package_share_directory('tl_description')
+                urdf_paths.insert(0, os.path.join(pkg, 'urdf', f'{arm_type}.urdf'))
+            except Exception:
+                pass
+            for path in urdf_paths:
+                if os.path.exists(path):
+                    self._fk_model = pinocchio.buildModelFromUrdf(path)
+                    break
+            if self._fk_model is None:
+                self.get_logger().warning('FK 模型加载失败，回零不可用')
+                return
+            self._fk_data = self._fk_model.createData()
+            ndof = self._fk_model.nq
+            tip_frame = f'link{ndof}'
+            self._fk_tip_frame = self._fk_model.getFrameId(tip_frame)
+            self._fk_ready = True
+            self.get_logger().info(f'FK（Pinocchio）就绪: {ndof} 轴, tip_frame={tip_frame}')
+        except Exception as e:
+            self.get_logger().warning(f'FK 初始化失败: {e}')
+
+    def _home_joints_to_pose(self):
+        """将 home_joints（度）转为笛卡尔位姿 [x, y, z, rx, ry, rz]。
+
+        真机模式：调用 coord_transform 服务做 FK。
+        仿真模式：使用 Pinocchio 本地 FK。
+        """
+        joints_deg = list(self.home_joints_)
+        ndof = len(joints_deg)
+
+        if not self.simulation_mode_:
+            # ========== 真机模式：调用 coord_transform 服务 ==========
+            if not self._coord_transform_client.wait_for_service(timeout_sec=2.0):
+                self.get_logger().error('coord_transform 服务不可用，回零失败')
+                return None
+            req = CoordTransform.Request()
+            req.origin_coord = 0       # 关节坐标系（输入）
+            req.target_coord = 1       # 直角坐标系（输出）
+            req.form = 0
+            # joint angles in degrees, pad to 7
+            pos = list(joints_deg) + [0.0] * (7 - ndof)
+            req.origin_pos = pos[:7]
+            req.reference_pos = [0.0] * 7
+            try:
+                ret = self._coord_transform_client.call(req)
+                if ret.success and len(ret.target_pos) >= 6:
+                    return list(ret.target_pos[:6])  # [x, y, z, rx, ry, rz]
+                self.get_logger().error(f'FK 服务失败: {ret.message}')
+            except Exception as e:
+                self.get_logger().error(f'FK 调用异常: {e}')
+            return None
+        else:
+            # ========== 仿真模式：Pinocchio 本地 FK ==========
+            if not self._fk_ready:
+                self.get_logger().error('FK 未就绪，回零失败')
+                return None
+            import pinocchio
+            # 度 → 弧度
+            q = np.array([math.radians(v) for v in joints_deg], dtype=np.float64)
+            pinocchio.forwardKinematics(self._fk_model, self._fk_data, q)
+            pinocchio.updateFramePlacements(self._fk_model, self._fk_data)
+            placement = self._fk_data.oMf[self._fk_tip_frame]
+            x = placement.translation[0] * 1000.0  # m → mm
+            y = placement.translation[1] * 1000.0
+            z = placement.translation[2] * 1000.0
+            # 旋转矩阵 → RPY（ZYX 欧拉角）
+            R = placement.rotation
+            rx = math.atan2(R[2, 1], R[2, 2])
+            ry = math.asin(-R[2, 0])
+            rz = math.atan2(R[1, 0], R[0, 0])
+            return [x, y, z, rx, ry, rz]
 
     # ==================== ServoJ 初始化（状态机）====================
     # _init_state: 0=等待服务 1=等待set_mode 2=等待set_speed
@@ -264,10 +378,26 @@ class F710TeleopNode(Node):
                 self.get_logger().error(
                     f'开启 ServoJ 失败: {self._init_future.result().message}')
                 self._init_state = 4
+                self._after_init()
                 return
             self.get_logger().info('ServoJ 已开启，遥操作就绪 ✅')
             self._init_state = 4
+            self._after_init()
             return
+
+    def _after_init(self):
+        """初始化完成后执行一次性的收尾工作。
+
+        主要任务：通过 FK 将 home_joints（关节角度）转为笛卡尔位姿，
+        覆写硬编码的初始 target_pose_，确保回零和起始位姿准确。
+        """
+        if self.simulation_mode_:
+            return  # 仿真模式已在 __init__ 中算过
+        init_pose = self._home_joints_to_pose()
+        if init_pose is not None:
+            self.target_pose_ = list(init_pose)
+            self.get_logger().info(
+                f'初始位姿（FK）: {[f"{v:.1f}" for v in self.target_pose_]}')
 
     def _close_servoj(self):
         """关闭 ServoJ 模式（非阻塞，发请求不等回复）。"""
@@ -314,10 +444,12 @@ class F710TeleopNode(Node):
         # ========== A 键：回零（防抖 500ms） ==========
         if joy.buttons[self.btn_a_] == 1 and (now - self._last_a_press) > 0.5:
             self._last_a_press = now
-            self.target_pose_ = list(self.initial_pose_)
-            self.speed_value_ = self.speed_default_
-            self._publish_servol()
-            self.get_logger().info(f'回零 → {self.initial_pose_}')
+            pose = self._home_joints_to_pose()
+            if pose is not None:
+                self.target_pose_ = list(pose)
+                self.speed_value_ = self.speed_default_
+                self._publish_servol()
+                self.get_logger().info(f'回零 → {pose}')
             return
 
         # ========== B 键：停止（防抖 500ms） ==========
@@ -345,6 +477,10 @@ class F710TeleopNode(Node):
 
         # 所有摇杆都在死区内的提前返回
         if not any(abs(v) > 0.001 for v in (lx, ly, rx, ry)):
+            return
+
+        # FK 尚未就绪时禁止发布（真机模式 ServoJ 初始化未完成）
+        if self.target_pose_ is None:
             return
 
         # ========== 计算运动增量 ==========

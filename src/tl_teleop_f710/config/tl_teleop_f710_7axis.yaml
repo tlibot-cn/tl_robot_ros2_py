@@ -1,7 +1,10 @@
 /**:
   ros__parameters:
     # ========== 控制频率 ==========
-    control_rate: 100.0              # 控制循环频率 (Hz)
+    control_rate: 20.0              # 控制循环频率 (Hz)
+
+    # ========== 机械臂型号 ==========
+    arm_type: tcb710
 
     # ========== 运动速度（0-100，对应机械臂实际速度范围）==========
     speed_default: 50.0             # 默认运动速度
@@ -10,9 +13,9 @@
     speed_step: 5.0                 # 十字键每按一次速度变化量
 
     # ========== 运动灵敏度 ==========
-    pos_sensitivity: 80.0           # 位置灵敏度 (mm/s，速度=100 时)
+    pos_sensitivity: 50.0           # 位置灵敏度 (mm/s，速度=100 时)
     rot_sensitivity: 1.0            # 姿态灵敏度 (rad/s，速度=100 时)
-    step_size: 5.0                  # servol 插值步长 (mm)
+    step_size: 2.0                  # servol 插值步长 (mm)
 
     # ========== ServoJ 初始化参数 ==========
     servo_speed: 25.0               # ServoJ 运动速度
@@ -24,8 +27,8 @@
     deadzone: 0.15                  # 摇杆死区，小于此值忽略
 
     # ========== 初始目标位姿 ==========
-    # 6 轴 TCB605： [x(mm), y(mm), z(mm), rx(rad), ry(rad), rz(rad)]
-    initial_pose: [230.0, 0.0, 359.0, 3.14, 0.0, 0.0]
+    # 7 轴 TCB710： [x(mm), y(mm), z(mm), rx(rad), ry(rad), rz(rad)]
+    home_joints: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     # ========== F710 轴映射 (DirectInput 模式，开关拨到 "D") ==========
     # 注意：所有轴的值范围均是 [-1.0, 1.0]

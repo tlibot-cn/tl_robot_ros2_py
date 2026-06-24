@@ -12,14 +12,15 @@
 
 ## 适用型号
 
-各型号有独立的配置文件和启动文件：
+通用启动文件按轴数（6 轴 / 7 轴）分类，兼容以下所有天链机械臂型号：
 
-| 型号 | 轴数 | 真机配置 | 仿真配置 | 真机启动 | 仿真启动 |
-|------|------|----------|----------|----------|----------|
-| TCB605 | 6 轴 | `tcb605.yaml` | `tcb605_sim.yaml` | `tcb605.launch.py` | `tcb605_gazebo.launch.py` |
-| TCB610 | 6 轴 | `tcb605.yaml` | `tcb605_sim.yaml` | `tcb605.launch.py` | `tcb605_gazebo.launch.py` |
-| TCB705 | 7 轴 | `tcb710.yaml` | `tcb710_sim.yaml` | `tcb710.launch.py` | `tcb710_gazebo.launch.py` |
-| TCB710 | 7 轴 | `tcb710.yaml` | `tcb710_sim.yaml` | `tcb710.launch.py` | `tcb710_gazebo.launch.py` |
+| 轴数 | 支持型号 | 通用配置文件 | 通用启动文件 |
+|------|---------|-------------|-------------|
+| **6 轴** | TCB605、TCB605F、TCB605L、TCB605LV、TCB605V、TCB610 | `tl_teleop_f710_6axis.yaml` / `_sim.yaml` | `tl_teleop_f710_6axis.launch.py` / `_gazebo.launch.py` |
+| **7 轴** | TCB610V、TCB705、TCB705F、TCB705L、TCB705LV、TCB705V、TCB710、TCB710V | `tl_teleop_f710_7axis.yaml` / `_sim.yaml` | `tl_teleop_f710_7axis.launch.py` / `_gazebo.launch.py` |
+
+> 真机启动无需指定型号参数，YAML 中 `arm_type` 仅用于标识；
+> 仿真启动需通过 `arm_type:=` 参数指定具体型号（见下文）。
 
 ## 环境要求
 
@@ -67,14 +68,14 @@ source install/setup.bash
 ros2 launch tl_driver tl_tcb605_driver.launch.py
 ```
 
-终端 2 — 启动手柄遥操作（按臂型选择）：
+终端 2 — 启动手柄遥操作（按轴数选择）：
 
 ```bash
-# TCB605 / TCB610（6 轴）
-ros2 launch tl_teleop_f710 tl_teleop_tcb605.launch.py
+# 6 轴机械臂通用（自动加载 config/tl_teleop_f710_6axis.yaml）
+ros2 launch tl_teleop_f710 tl_teleop_f710_6axis.launch.py
 
-# TCB705 / TCB710（7 轴）
-ros2 launch tl_teleop_f710 tl_teleop_tcb710.launch.py
+# 7 轴机械臂通用（自动加载 config/tl_teleop_f710_7axis.yaml）
+ros2 launch tl_teleop_f710 tl_teleop_f710_7axis.launch.py
 ```
 
 真机模式下节点会自动完成以下初始化：
@@ -83,25 +84,35 @@ ros2 launch tl_teleop_f710 tl_teleop_tcb710.launch.py
 3. 设置 ServoJ 运动速度
 4. 开启关节跟踪模式（ServoJ）
 5. 输出 ✅ 提示，遥操作就绪
-6. 需要按一下手柄上的“START”键，开始手柄遥控机械臂
+6. 有时候需要按一下手柄上的“START”键，开始手柄遥控机械臂
 
 如果手柄在非默认路径，可指定设备：
 
 ```bash
-ros2 launch tl_teleop_f710 tl_teleop_tcb605.launch.py joy_dev:=/dev/input/js1
+ros2 launch tl_teleop_f710 tl_teleop_f710_6axis.launch.py joy_dev:=/dev/input/js1
 ```
 
 ### Gazebo 仿真模式（无需连接真机）
 
 ```bash
-# TCB605 仿真（需先安装 Pinocchio：pip3 install pinocchio）
-ros2 launch tl_teleop_f710 tl_teleop_tcb605_gazebo.launch.py
+# 6 轴仿真（arm_type 指定具体型号）
+ros2 launch tl_teleop_f710 tl_teleop_f710_6axis_gazebo.launch.py arm_type:=tcb605
+ros2 launch tl_teleop_f710 tl_teleop_f710_6axis_gazebo.launch.py arm_type:=tcb610
+ros2 launch tl_teleop_f710 tl_teleop_f710_6axis_gazebo.launch.py arm_type:=tcb605f
 
-# TCB710 仿真
-ros2 launch tl_teleop_f710 tl_teleop_tcb710_gazebo.launch.py
+# 7 轴仿真
+ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb710
+ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb705
 ```
 
-仿真模式下 IK 由桥接节点内部使用 Pinocchio 库本地求解，无需 MoveIt2。
+**支持的 `arm_type` 值**（对应 `tl_description/urdf/` 下的 URDF 模型文件）：
+
+| 轴数 | arm_type 可选值 |
+|------|----------------|
+| 6 轴 | `tcb605`、`tcb605f`、`tcb605l`、`tcb605lv`、`tcb605v`、`tcb610` |
+| 7 轴 | `tcb610v`、`tcb705`、`tcb705f`、`tcb705l`、`tcb705lv`、`tcb705v`、`tcb710`、`tcb710v` |
+
+`arm_type` 参数决定了 Gazebo 中加载的 URDF 模型、Pinocchio 运动学模型以及 position controller 的关节数量（6 或 7）。仿真模式下 IK 由桥接节点内部使用 Pinocchio 库本地求解，无需 MoveIt2。
 
 ## 操作说明
 
@@ -124,25 +135,28 @@ ros2 launch tl_teleop_f710 tl_teleop_tcb710_gazebo.launch.py
 
 | 模式 | 配置文件 | 特点 |
 |------|----------|------|
-| 真机 | `config/tl_teleop_tcb605.yaml` | 含 ServoJ 初始化参数，灵敏度较高 |
-| 仿真 | `config/tl_teleop_tcb605_sim.yaml` | 跳过 ServoJ 初始化，灵敏度偏低更平滑 |
+| 真机 | `config/tl_teleop_f710_6axis.yaml` | 含 ServoJ 初始化参数，灵敏度较高 |
+| 仿真 | `config/tl_teleop_f710_6axis_sim.yaml` | 跳过 ServoJ 初始化，灵敏度偏低更平滑 |
 
 ### 参数说明
 
 | 参数 | 真机默认值 | 仿真默认值 | 说明 |
 |------|-----------|-----------|------|
-| `control_rate` | 20.0 | 20.0 | 控制循环频率 (Hz) |
+| `control_rate` | 100.0 | 100.0 | 控制循环频率 (Hz) |
 | `simulation_mode` | false | true | true 时跳过 ServoJ 初始化 |
+| `arm_type` | tcb605 | tcb605 | 机械臂型号，仿真时与 `arm_type:=` 一致 |
 | `speed_default` | 50.0 | 50.0 | 默认运动速度 (0-100) |
 | `speed_min` | 5.0 | 5.0 | 最小速度 |
 | `speed_max` | 100.0 | 100.0 | 最大速度 |
 | `speed_step` | 5.0 | 5.0 | 十字键每按一次速度变化量 |
-| `pos_sensitivity` | 50.0 | 30.0 | 位置灵敏度 (mm/s，速度=100 时) |
-| `rot_sensitivity` | 1.0 | 0.8 | 姿态灵敏度 (rad/s，速度=100 时) |
-| `step_size` | 2.0 | 1.0 | servol 插值步长 (mm) |
+| `pos_sensitivity` | 80.0 | 200.0 | 位置灵敏度 (mm/s，速度=100 时) |
+| `rot_sensitivity` | 1.0 | 2.0 | 姿态灵敏度 (rad/s，速度=100 时) |
+| `step_size` | 5.0 | 1.0 | servol 插值步长 (mm) |
 | `deadzone` | 0.15 | 0.15 | 摇杆死区 |
-| `initial_pose` | [230,0,359,3.14,0,0] | [230,0,359,3.14,0,0] | 回零后的初始位姿 |
+| `home_joints` | [0,0,0,0,0,0] | [0,0,0,0,0,0] | 回零关节角度（度），通过 FK 转为笛卡尔位姿 |
 | `servo_speed` | 25.0 | — | ServoJ 运动速度（仅真机） |
+
+> 对于 7 轴机械臂，`home_joints` 数组长度为 7：`[0,0,0,0,0,0,0]`
 
 速度范围 0-100，十字键上下调节，步长 5。可通过增大 `pos_sensitivity` 来整体提高运动速度。
 
@@ -199,3 +213,4 @@ F710 手柄 → joy_node → /joy → tl_teleop_f710_node
 4. 仿真模式需安装 Python 库：`pip3 install pinocchio`
 5. 长距离移动时建议使用较大 `step_size` 以提高响应
 6. 真机与仿真参数独立配置在各自的 YAML 文件中，互不干扰
+7. 仿真模式通过 `arm_type` 参数自动匹配对应 URDF 模型和关节数量（6/7 轴）
