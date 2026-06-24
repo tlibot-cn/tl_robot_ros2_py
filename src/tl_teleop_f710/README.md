@@ -131,32 +131,35 @@ ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb70
 
 ## 参数配置
 
-以tcb605机械臂为例，真机和仿真使用独立的配置文件：
+6 轴和 7 轴机械臂的真机/仿真使用独立的配置文件：
 
-| 模式 | 配置文件 | 特点 |
-|------|----------|------|
-| 真机 | `config/tl_teleop_f710_6axis.yaml` | 含 ServoJ 初始化参数，灵敏度较高 |
-| 仿真 | `config/tl_teleop_f710_6axis_sim.yaml` | 跳过 ServoJ 初始化，灵敏度偏低更平滑 |
+| 配置 | 文件 | 特点 |
+|------|------|------|
+| 6轴真机 | `config/tl_teleop_f710_6axis.yaml` | 含 ServoJ 参数，`control_rate=100`，灵敏度适中 |
+| 6轴仿真 | `config/tl_teleop_f710_6axis_sim.yaml` | `simulation_mode=true`，跳 ServoJ，灵敏度更高、步长更小 |
+| 7轴真机 | `config/tl_teleop_f710_7axis.yaml` | 含 ServoJ 参数，`control_rate=100`，灵敏度适中 |
+| 7轴仿真 | `config/tl_teleop_f710_7axis_sim.yaml` | `simulation_mode=true`，跳 ServoJ，灵敏度更高、步长更小 |
 
 ### 参数说明
 
-| 参数 | 真机默认值 | 仿真默认值 | 说明 |
-|------|-----------|-----------|------|
-| `control_rate` | 100.0 | 100.0 | 控制循环频率 (Hz) |
-| `simulation_mode` | false | true | true 时跳过 ServoJ 初始化 |
-| `arm_type` | tcb605 | tcb605 | 机械臂型号，仿真时与 `arm_type:=` 一致 |
-| `speed_default` | 50.0 | 50.0 | 默认运动速度 (0-100) |
-| `speed_min` | 5.0 | 5.0 | 最小速度 |
-| `speed_max` | 100.0 | 100.0 | 最大速度 |
-| `speed_step` | 5.0 | 5.0 | 十字键每按一次速度变化量 |
-| `pos_sensitivity` | 80.0 | 200.0 | 位置灵敏度 (mm/s，速度=100 时) |
-| `rot_sensitivity` | 1.0 | 2.0 | 姿态灵敏度 (rad/s，速度=100 时) |
-| `step_size` | 5.0 | 1.0 | servol 插值步长 (mm) |
-| `deadzone` | 0.15 | 0.15 | 摇杆死区 |
-| `home_joints` | [0,0,0,0,0,0] | [0,0,0,0,0,0] | 回零关节角度（度），通过 FK 转为笛卡尔位姿 |
-| `servo_speed` | 25.0 | — | ServoJ 运动速度（仅真机） |
-
-> 对于 7 轴机械臂，`home_joints` 数组长度为 7：`[0,0,0,0,0,0,0]`
+| 参数 | 6轴真机 | 6轴仿真 | 7轴真机 | 7轴仿真 | 说明 |
+|------|---------|---------|---------|---------|------|
+| `control_rate` | 100.0 | 100.0 | 100.0 | 100.0 | 控制循环频率 (Hz) |
+| `simulation_mode` | false | true | false | true | true 时跳过 ServoJ 初始化 |
+| `arm_type` | tcb605 | tcb605 | tcb710 | tcb710 | 机械臂型号标识 |
+| `speed_default` | 50.0 | 50.0 | 50.0 | 50.0 | 默认运动速度 (0-100) |
+| `speed_min` | 5.0 | 5.0 | 5.0 | 5.0 | 最小速度 |
+| `speed_max` | 100.0 | 100.0 | 100.0 | 100.0 | 最大速度 |
+| `speed_step` | 5.0 | 5.0 | 5.0 | 5.0 | 十字键每按一次速度变化量 |
+| `pos_sensitivity` | 80.0 | 200.0 | 80.0 | 200.0 | 位置灵敏度 (mm/s) |
+| `rot_sensitivity` | 1.0 | 2.0 | 1.0 | 2.0 | 姿态灵敏度 (rad/s) |
+| `step_size` | 5.0 | 1.0 | 5.0 | 1.0 | servol 插值步长 (mm) |
+| `deadzone` | 0.15 | 0.15 | 0.15 | 0.15 | 摇杆死区 |
+| `home_joints` | 6 个零值 | 6 个零值 | 7 个零值 | 7 个零值 | 回零关节角度（度），通过 FK 转为笛卡尔位姿 |
+| `servo_speed` | 25.0 | — | 25.0 | — | ServoJ 运动速度（仅真机） |
+| `servo_vmax` | 80.0 | — | 80.0 | — | ServoJ 各轴最大速度 (°/s) |
+| `servo_amax` | 3000.0 | — | 3000.0 | — | ServoJ 各轴最大加速度 (°/s²) |
+| `servo_jmax` | 50000.0 | — | 50000.0 | — | ServoJ 各轴最大加加速度 (°/s³) |
 
 速度范围 0-100，十字键上下调节，步长 5。可通过增大 `pos_sensitivity` 来整体提高运动速度。
 
