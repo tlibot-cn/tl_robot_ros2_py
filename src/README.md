@@ -19,17 +19,21 @@
   * 2.1 [tl_bringup — 启动聚合](#21-tl_bringup--启动聚合)
   * 2.2 [tl_description — 模型描述](#22-tl_description--模型描述)
   * 2.3 [tl_driver — 硬件驱动](#23-tl_driver--硬件驱动)
-  * 2.4 [tl_gazebo — Gazebo 仿真](#24-tl_gazebo--gazebo-仿真)
-  * 2.5 [tl_moveit2_config — MoveIt2 配置](#25-tl_moveit2_config--moveit2-配置)
-  * 2.6 [tl_ros2_interface — 消息与接口定义](#26-tl_ros2_interface--消息与接口定义)
+  * 2.4 [tl_example — 使用示例](#24-tl_example--使用示例)
+  * 2.5 [tl_gazebo — Gazebo 仿真](#25-tl_gazebo--gazebo-仿真)
+  * 2.6 [tl_hardware — ros2_control 硬件接口](#26-tl_hardware--ros2_control-硬件接口)
+  * 2.7 [tl_moveit2_config — MoveIt2 配置](#27-tl_moveit2_config--moveit2-配置)
+  * 2.8 [tl_ros2_interface — 消息与接口定义](#28-tl_ros2_interface--消息与接口定义)
+  * 2.9 [tl_teleop — VR 手柄遥操作](#29-tl_teleop--vr-手柄遥操作)
+  * 2.10 [tl_teleop_f710 — F710 手柄遥操作](#210-tl_teleop_f710--f710-手柄遥操作)
 
 ## 1 功能包概览
 
-`src/` 目录包含 **7 个功能包目录**，每个功能包（及子包）的作用如下：
+`src/` 目录包含 **10 个功能包目录**（其中 `tl_moveit2_config` 内含 14 个子包），每个功能包（及子包）的作用如下。
 
 ```
 src/
-├── tl_bringup/              # 启动文件
+├── tl_bringup/              # 启动聚合
 │   ├── launch/              # 一键启动 launch 文件
 │   └── doc/
 ├── tl_description/          # 模型描述
@@ -42,10 +46,17 @@ src/
 │   ├── config/              # 14 套通信参数配置
 │   ├── launch/              # 驱动节点 launch
 │   ├── lib/                 # NexMotion SWIG 封装
-│   └── src/                 # 驱动节点源码
+│   └── tl_driver/           # 驱动节点源码
+├── tl_example/              # 使用示例
+│   ├── launch/
+│   └── tl_example/
 ├── tl_gazebo/               # Gazebo 仿真
 │   ├── config/
 │   └── launch/              # 14 套 Gazebo 仿真 launch
+├── tl_hardware/             # ros2_control 硬件接口（C++）
+│   ├── include/
+│   ├── src/
+│   └── tl_hardware_interface.xml
 ├── tl_moveit2_config/       # MoveIt2 配置（内含 14 个子包）
 │   ├── tl_tcb605_config/    # 14 套 MoveIt2 配置（每型号一套）
 │   │   ├── config/          # SRDF、限位、运动学等
@@ -53,9 +64,15 @@ src/
 │   ├── tl_tcb605f_config/
 │   ├── ...
 │   └── tl_tcb710v_config/
-└── tl_ros2_interface/       # ROS2 消息与服务接口
-    ├── msg/                 # 11 个 msg 定义文件
-    └── srv/                 # 45 个 srv 定义文件
+├── tl_ros2_interface/       # ROS2 消息与服务接口
+│   ├── msg/                 # 11 个 msg 定义文件
+│   └── srv/                 # 45 个 srv 定义文件
+├── tl_teleop/               # VR 手柄遥操作
+│   ├── launch/
+│   └── tl_teleop/
+└── tl_teleop_f710/          # F710 手柄遥操作
+    ├── launch/
+    └── tl_teleop_f710/
 ```
 
 ## 2 功能包说明
@@ -95,13 +112,37 @@ src/
 
 详细说明请参考 [tl_driver/README.md](tl_driver/README.md)。
 
-### 2.4 tl_gazebo — Gazebo 仿真
+### 2.4 tl_example — 使用示例
+
+提供 ROS2 接口调用示例，展示如何与 `tl_driver` 的各类服务和话题交互，帮助用户快速上手开发自己的应用。
+
+详细说明请参考 [tl_example/README.md](tl_example/README.md)。
+
+### 2.5 tl_gazebo — Gazebo 仿真
 
 在 Gazebo 仿真环境中加载机械臂模型，并可通过 MoveIt2 对仿真的机械臂进行规划控制。
 
 详细说明请参考 [tl_gazebo/README.md](tl_gazebo/README.md)。
 
-### 2.5 tl_moveit2_config — MoveIt2 配置
+### 2.6 tl_hardware — ros2_control 硬件接口
+
+位于 `src/tl_hardware/`。该包是 ros2_control 的 `SystemInterface` 硬件接口插件（C++ 实现），作为 ros2_control 控制器层与 `tl_driver` 驱动节点之间的数据桥。
+
+**作用**：
+- 接收 `joint_trajectory_controller` 输出的位置指令（弧度）
+- 转换为角度后发布到 `/tl_driver/set_servoj_pos` 话题
+- 订阅 `tl_driver` 发布的 `/joint_states`，获取关节状态反馈
+- 调用 `tl_driver` 的 `open_servoj` / `close_servoj` 服务管理伺服流模式
+
+**数据链路**：MoveIt2 → ros2_control（joint_trajectory_controller）→ `tl_hardware`（话题/服务）→ `tl_driver`（TCP）→ 机械臂
+
+**注意事项**：
+- 该包是工作空间中**唯一的 C++ 包**，因为 ros2_control 的插件加载机制（`pluginlib`）要求硬件接口使用 C++ 实现
+- 构建时必须**先构建 `tl_ros2_interface`**，否则链接失败
+
+详细说明请参考 [tl_hardware/README.md](tl_hardware/README.md)。
+
+### 2.7 tl_moveit2_config — MoveIt2 配置
 
 为各系列机械臂提供运动规划控制功能，包括虚拟和真实机械臂控制两部分。
 
@@ -112,7 +153,7 @@ src/
 
 详细说明请参考 [tl_moveit2_config/README.md](tl_moveit2_config/README.md)。
 
-### 2.6 tl_ros2_interface — 消息与接口定义
+### 2.8 tl_ros2_interface — 消息与接口定义
 
 为 TL 系列机械臂在 ROS2 框架下提供消息（msg）和服务（srv）接口定义，供上层驱动或应用调用。
 
@@ -122,3 +163,15 @@ src/
 该包不包含可执行代码，仅提供接口定义（.msg 和 .srv 文件），其他功能包通过编译生成的头文件引用这些接口类型。
 
 详细说明请参考 [tl_ros2_interface/README.md](tl_ros2_interface/README.md)。
+
+### 2.9 tl_teleop — VR 手柄遥操作
+
+通过 VR 手柄（需配合 xrobotoolkit_sdk 和 VR 设备）实现机械臂的远程遥操作控制，将手柄姿态实时映射为机械臂运动指令。
+
+详细说明请参考 [tl_teleop/README.md](tl_teleop/README.md)。
+
+### 2.10 tl_teleop_f710 — F710 手柄遥操作
+
+通过罗技 F710 游戏手柄实现机械臂的遥操作控制，通过话题下发运动指令。
+
+详细说明请参考 [tl_teleop_f710/README.md](tl_teleop_f710/README.md)。

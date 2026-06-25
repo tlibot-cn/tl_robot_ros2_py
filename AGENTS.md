@@ -13,14 +13,12 @@
 
 ## 工作空间概述
 
-天链（TianLian）机械臂 ROS2 工作空间（Python 实现，ARM 架构）。`src/` 下包含 6 个功能包，使用标准 `colcon build` 构建流程。纯 ROS2（ament_cmake + ament_python），无 Node.js、无前端。
+天链（TianLian）机械臂 ROS2 工作空间（Python 实现，含一个 C++ 硬件接口插件，ARM 架构）。`src/` 下包含 10 个功能包（其中 `tl_moveit2_config` 内含 14 个子功能包），使用标准 `colcon build` 构建流程。纯 ROS2（ament_cmake + ament_python），无 Node.js、无前端。
 
 ## 构建命令
 
 （必须先构建 `tl_ros2_interface`，再构建其他包）：
 ```bash
-colcon build --packages-select tl_ros2_interface
-source install/setup.bash
 colcon build
 source install/setup.bash
 ```
@@ -39,11 +37,18 @@ source install/setup.bash
 
 ```
 tl_ros2_interface  （基础：自定义 msg/srv，无依赖）
-  └─► tl_driver       （Python 节点，通过 ctypes 链接 _tl_host.so）
+  └─► tl_driver       （Python 节点，通过 SWIG 链接 _tl_host.so）
+  └─► tl_hardware     （C++ ros2_control 硬件接口插件）
+  └─► tl_example      （使用示例，引用接口类型）
 tl_description     （独立：URDF + 网格 + RViz）
   └─► tl_gazebo       （Gazebo 仿真，依赖 tl_description）
   └─► tl_moveit2_config（MoveIt2 配置集合，14 个子包）
-tl_bringup         （启动聚合器：包含 tl_driver + tl_description）
+  └─► tl_bringup      （启动聚合器：包含 tl_description）
+tl_driver          （机械臂驱动，依赖 tl_ros2_interface）
+  └─► tl_bringup      （启动聚合器：包含 tl_driver）
+  └─► tl_hardware     （运行时通过话题/服务与 tl_driver 交互）
+  └─► tl_teleop       （VR 手柄遥操作，通过话题下发运动指令）
+  └─► tl_teleop_f710  （F710 手柄遥操作，通过话题下发运动指令）
 ```
 
 ## 功能包说明
@@ -103,6 +108,27 @@ tl_bringup         （启动聚合器：包含 tl_driver + tl_description）
 - **启动**：`ros2 launch tl_<arm_type>_config demo.launch.py`
 - **配置**：每个子包包含 `config/`（initial_positions、joint_limits、kinematics、srdf 等）和 `launch/`（demo、move_group、rviz 等）
 
+### tl_hardware
+- **构建类型**：ament_cmake（C++）
+- **用途**：ros2_control `SystemInterface` 硬件接口插件，桥接 MoveIt2 控制器层与 `tl_driver`
+- **插件名**：`tl_hardware/TLHardwareInterface`
+- **通信**：订阅 `/joint_states`，发布 `/tl_driver/set_servoj_pos`，调用 `open_servoj`/`close_servoj` 服务
+- **工作空间中唯一的 C++ 包** — 因 ros2_control 的 `pluginlib` 要求硬件接口使用 C++ 实现
+- **启动**：通过 MoveIt2 配置包的 `real_hardware_demo.launch.py`，传入 `use_real_hardware:=true`
+
+### tl_teleop
+- **构建类型**：ament_python
+- **用途**：VR 手柄遥操作 — 通过 xrobotoolkit_sdk（Python 绑定库）连接 VR 设备，将手柄姿态映射为机械臂运动指令
+- **依赖**：`xrobotoolkit_sdk`（`setup.py` 中集成自动构建与安装，详见同包 README）
+
+### tl_teleop_f710
+- **构建类型**：ament_python
+- **用途**：罗技 F710 游戏手柄遥操作，通过话题下发运动指令控制机械臂
+
+### tl_example
+- **构建类型**：ament_python
+- **用途**：使用示例 — 展示如何调用 `tl_ros2_interface` 中定义的接口类型与 `tl_driver` 的服务/话题交互
+
 ## 支持的臂型
 
 启动参数中全部小写：`tcb605`、`tcb605f`、`tcb605l`、`tcb605lv`、`tcb605v`、`tcb610`、`tcb610v`、`tcb705`、`tcb705f`、`tcb705l`、`tcb705lv`、`tcb705v`、`tcb710`、`tcb710v`
@@ -118,7 +144,7 @@ tl_bringup         （启动聚合器：包含 tl_driver + tl_description）
 | `/arm_status` | tl_driver | — | `tl_ros2_interface/ArmStatus`（失败时回退 `std_msgs/String`） |
 | `/tl_driver/moveJ` | — | tl_driver | `tl_ros2_interface/MoveCommand` |
 | `/tl_driver/moveL` | — | tl_driver | `tl_ros2_interface/MoveCommand` |
-| `/tl_driver/set_servoj_pos` | — | tl_driver | `std_msgs/Float64MultiArray` |
+| `/tl_driver/set_servoj_pos` | tl_hardware | tl_driver | `std_msgs/Float64MultiArray` |
 | `/tf`、`/tf_static` | tl_description（robot_state_publisher） | — | `tf2_msgs/TFMessage` |
 
 ## 测试

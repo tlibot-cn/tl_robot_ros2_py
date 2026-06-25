@@ -39,7 +39,7 @@ colcon build
 source install/setup.bash
 ```
 
-编译完成后即可进行各功能包的运行操作。
+编译完成后即可进行各功能包的运行操作。各功能包已在 `package.xml` 中声明了相互依赖，colcon 会自动处理构建顺序。
 
 ### 代码格式化
 
@@ -84,14 +84,35 @@ source ~/tl_robot_ros2_py/install/setup.bash
 ros2 launch tl_gazebo gazebo_<arm_type>_demo.launch.py
 ```
 
+### MoveIt2 + 真实机械臂
+
+通过 `tl_hardware`（ros2_control 硬件接口插件）连接 MoveIt2 与真实机械臂：
+
+```bash
+source ~/tl_robot_ros2_py/install/setup.bash
+ros2 launch tl_<arm_type>_config real_hardware_demo.launch.py
+```
+
+数据链路：MoveIt2 → ros2_control（joint_trajectory_controller）→ `tl_hardware`（话题/服务）→ `tl_driver`（TCP）→ 机械臂
+
 ## 工作空间结构
 
 ```
 tl_robot_ros2_py/
-├── src/           # ROS2 功能包源码
-├── build/         # 编译中间产物（已 gitignore）
-├── install/       # 编译输出（已 gitignore）
-└── log/           # 编译日志（已 gitignore）
+├── src/               # ROS2 功能包源码（10 个包）
+│   ├── tl_bringup/        # 启动聚合
+│   ├── tl_description/    # URDF 模型描述
+│   ├── tl_driver/         # 机械臂驱动（Python）
+│   ├── tl_example/        # 使用示例
+│   ├── tl_gazebo/         # Gazebo 仿真
+│   ├── tl_hardware/       # ros2_control 硬件接口插件（C++）
+│   ├── tl_moveit2_config/ # MoveIt2 配置（14 个子包）
+│   ├── tl_ros2_interface/ # 自定义 msg/srv
+│   ├── tl_teleop/         # VR 手柄遥操作
+│   └── tl_teleop_f710/    # F710 手柄遥操作
+├── build/             # 编译中间产物（已 gitignore）
+├── install/           # 编译输出（已 gitignore）
+└── log/               # 编译日志（已 gitignore）
 ```
 
 各功能包的详细用途请参见 [`src/README.md`](src/README.md)。
