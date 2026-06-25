@@ -16,8 +16,8 @@
 
 | 轴数 | 支持型号 | 通用配置文件 | 通用启动文件 |
 |------|---------|-------------|-------------|
-| **6 轴** | TCB605、TCB605F、TCB605L、TCB605LV、TCB605V、TCB610 | `tl_teleop_f710_6axis.yaml` / `_sim.yaml` | `tl_teleop_f710_6axis.launch.py` / `_gazebo.launch.py` |
-| **7 轴** | TCB610V、TCB705、TCB705F、TCB705L、TCB705LV、TCB705V、TCB710、TCB710V | `tl_teleop_f710_7axis.yaml` / `_sim.yaml` | `tl_teleop_f710_7axis.launch.py` / `_gazebo.launch.py` |
+| **6 轴** | TCB605、TCB605F、TCB605L、TCB605LV、TCB605V、TCB610、TCB610V | `tl_teleop_f710_6axis.yaml` / `_sim.yaml` | `tl_teleop_f710_6axis.launch.py` / `_gazebo.launch.py` |
+| **7 轴** | TCB705、TCB705F、TCB705L、TCB705LV、TCB705V、TCB710、TCB710V | `tl_teleop_f710_7axis.yaml` / `_sim.yaml` | `tl_teleop_f710_7axis.launch.py` / `_gazebo.launch.py` |
 
 > 真机启动无需指定型号参数，YAML 中 `arm_type` 仅用于标识；
 > 仿真启动需通过 `arm_type:=` 参数指定具体型号（见下文）。
@@ -109,8 +109,8 @@ ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb70
 
 | 轴数 | arm_type 可选值 |
 |------|----------------|
-| 6 轴 | `tcb605`、`tcb605f`、`tcb605l`、`tcb605lv`、`tcb605v`、`tcb610` |
-| 7 轴 | `tcb610v`、`tcb705`、`tcb705f`、`tcb705l`、`tcb705lv`、`tcb705v`、`tcb710`、`tcb710v` |
+| 6 轴 | `tcb605`、`tcb605f`、`tcb605l`、`tcb605lv`、`tcb605v`、`tcb610`、`tcb610v` |
+| 7 轴 | `tcb705`、`tcb705f`、`tcb705l`、`tcb705lv`、`tcb705v`、`tcb710`、`tcb710v` |
 
 `arm_type` 参数决定了 Gazebo 中加载的 URDF 模型、Pinocchio 运动学模型以及 position controller 的关节数量（6 或 7）。仿真模式下 IK 由桥接节点内部使用 Pinocchio 库本地求解，无需 MoveIt2。
 
