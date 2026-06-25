@@ -41,6 +41,18 @@ source install/setup.bash
 
 编译完成后即可进行各功能包的运行操作。
 
+### 代码格式化
+
+```bash
+pip install black
+```
+
+`git commit` 时会自动通过 `.githooks/pre-commit` 运行 `black` 格式化 Python 代码。首次克隆后需执行：
+
+```bash
+git config core.hooksPath .githooks
+```
+
 > **关于 tl_teleop 遥操作功能包**：`tl_teleop` 的 `setup.py` 已集成 `xrobotoolkit_sdk`（VR 手柄 Python 绑定库）的自动构建与安装。编译前建议先阅读 [`src/tl_teleop/README.md`](src/tl_teleop/README.md) 中的「xrobotoolkit_sdk 安装」小节，了解原生库依赖和两种安装方式。
 
 ## 运行

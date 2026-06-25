@@ -27,6 +27,14 @@ source install/setup.bash
 
 构建产物在 `build/`、`install/`、`log/` — 均已 gitignore。
 
+## 代码格式化
+
+- **格式化工具**：`black`，配置在 `pyproject.toml` 的 `[tool.black]`，行宽 100
+- **git hook**：`.githooks/pre-commit` — `git commit` 时自动运行 `black` 格式化暂存的 Python 文件并重新 `git add`
+- **跳过 hook**：`git commit --no-verify`
+- **手动格式化**：`black .` 或 `black --check .`（仅检查）
+- **不要修改 hook 脚本**：除非格式化工具有变更
+
 ## 功能包依赖关系
 
 ```
