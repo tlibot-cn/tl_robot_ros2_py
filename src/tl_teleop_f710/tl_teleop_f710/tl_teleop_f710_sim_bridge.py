@@ -41,23 +41,24 @@ class ServolSimBridge(Node):
     joint_names = None
 
     def __init__(self):
-        super().__init__('tl_teleop_f710_sim_bridge')
+        super().__init__("tl_teleop_f710_sim_bridge")
 
         # ===== 参数 =====
-        self.declare_parameter('arm_type', 'tcb605')
-        self.declare_parameter('position_controller_topic',
-                               '/tcb_group_position_controller/commands')
-        self.declare_parameter('joint_state_topic', '/joint_states')
-        self.declare_parameter('ik_eps', 1e-4)
-        self.declare_parameter('ik_max_iter', 200)
-        self.declare_parameter('ik_dt', 0.5)
+        self.declare_parameter("arm_type", "tcb605")
+        self.declare_parameter(
+            "position_controller_topic", "/tcb_group_position_controller/commands"
+        )
+        self.declare_parameter("joint_state_topic", "/joint_states")
+        self.declare_parameter("ik_eps", 1e-4)
+        self.declare_parameter("ik_max_iter", 200)
+        self.declare_parameter("ik_dt", 0.5)
 
-        self._arm_type = self.get_parameter('arm_type').value
-        self._pos_ctrl_topic = self.get_parameter('position_controller_topic').value
-        self._js_topic = self.get_parameter('joint_state_topic').value
-        self._ik_eps = self.get_parameter('ik_eps').value
-        self._ik_max_iter = int(self.get_parameter('ik_max_iter').value)
-        self._ik_dt = self.get_parameter('ik_dt').value
+        self._arm_type = self.get_parameter("arm_type").value
+        self._pos_ctrl_topic = self.get_parameter("position_controller_topic").value
+        self._js_topic = self.get_parameter("joint_state_topic").value
+        self._ik_eps = self.get_parameter("ik_eps").value
+        self._ik_max_iter = int(self.get_parameter("ik_max_iter").value)
+        self._ik_dt = self.get_parameter("ik_dt").value
 
         # ===== 初始化 Pinocchio 运动学模型 =====
         self._model = None
@@ -76,21 +77,30 @@ class ServolSimBridge(Node):
 
         # ===== 订阅 =====
         self._servol_sub = self.create_subscription(
-            ServolMove, '/tl_driver/set_servol_pos',
-            self._servol_callback, 10, callback_group=self._sub_cb_group)
+            ServolMove,
+            "/tl_driver/set_servol_pos",
+            self._servol_callback,
+            10,
+            callback_group=self._sub_cb_group,
+        )
 
         self._js_sub = self.create_subscription(
-            JointState, self._js_topic,
-            self._joint_state_callback, 10, callback_group=self._sub_cb_group)
+            JointState,
+            self._js_topic,
+            self._joint_state_callback,
+            10,
+            callback_group=self._sub_cb_group,
+        )
 
         # ===== 发布：position controller =====
         self._pos_pub = self.create_publisher(
-            Float64MultiArray, self._pos_ctrl_topic, 10,
-            callback_group=self._pub_cb_group)
+            Float64MultiArray, self._pos_ctrl_topic, 10, callback_group=self._pub_cb_group
+        )
 
         self.get_logger().info(
-            '仿真桥接节点已启动（Pinocchio IK, '
-            f'max_iter={self._ik_max_iter}, eps={self._ik_eps})')
+            "仿真桥接节点已启动（Pinocchio IK, "
+            f"max_iter={self._ik_max_iter}, eps={self._ik_eps})"
+        )
 
     # -------- Pinocchio 初始化 --------
 
@@ -98,44 +108,44 @@ class ServolSimBridge(Node):
         """从 URDF 文件加载 Pinocchio 模型。"""
         arm_type = self._arm_type
         urdf_paths = [
-            os.path.expanduser(
-                f'~/tl_robot_ros2_py/src/tl_description/urdf/{arm_type}.urdf'),
+            os.path.expanduser(f"~/tl_robot_ros2_py/src/tl_description/urdf/{arm_type}.urdf"),
         ]
         try:
             from ament_index_python.packages import get_package_share_directory
-            pkg_path = get_package_share_directory('tl_description')
-            urdf_paths.insert(0, os.path.join(pkg_path, 'urdf', f'{arm_type}.urdf'))
+
+            pkg_path = get_package_share_directory("tl_description")
+            urdf_paths.insert(0, os.path.join(pkg_path, "urdf", f"{arm_type}.urdf"))
         except Exception:
             pass
 
         loaded = False
         for path in urdf_paths:
             if os.path.exists(path):
-                self.get_logger().info(f'加载 URDF: {path}')
+                self.get_logger().info(f"加载 URDF: {path}")
                 self._model = pinocchio.buildModelFromUrdf(path)
                 loaded = True
                 break
 
         if not loaded:
-            self.get_logger().fatal(
-                f'找不到 URDF 文件，尝试过: {urdf_paths}')
-            raise FileNotFoundError(f'URDF not found: {urdf_paths}')
+            self.get_logger().fatal(f"找不到 URDF 文件，尝试过: {urdf_paths}")
+            raise FileNotFoundError(f"URDF not found: {urdf_paths}")
 
         self._data = self._model.createData()
         # 根据模型动态确定关节数和末端名称
         self.ndof = self._model.nq
-        tip_joint_name = f'joint{self.ndof}'
-        tip_link_name = f'link{self.ndof}'
-        self.joint_names = [f'joint{i+1}' for i in range(self.ndof)]
+        tip_joint_name = f"joint{self.ndof}"
+        tip_link_name = f"link{self.ndof}"
+        self.joint_names = [f"joint{i+1}" for i in range(self.ndof)]
         self._tip_joint_id = self._model.getJointId(tip_joint_name)
         self._tip_frame_id = self._model.getFrameId(tip_link_name)
         # 重新初始化当前关节缓存
         self._current_joints = np.zeros(self.ndof)
         self.get_logger().info(
-            f'Pinocchio 模型加载完成: {self._model.name}, '
-            f'nq={self._model.nq}, njoints={self._model.njoints}, '
-            f'tip_joint={tip_joint_name} id={self._tip_joint_id}, '
-            f'tip_frame={tip_link_name} id={self._tip_frame_id}')
+            f"Pinocchio 模型加载完成: {self._model.name}, "
+            f"nq={self._model.nq}, njoints={self._model.njoints}, "
+            f"tip_joint={tip_joint_name} id={self._tip_joint_id}, "
+            f"tip_frame={tip_link_name} id={self._tip_frame_id}"
+        )
 
     # -------- IK 求解（阻尼伪逆法） --------
 
@@ -156,13 +166,13 @@ class ServolSimBridge(Node):
 
         # 构建目标位姿 SE3
         c, s = math.cos, math.sin
-        cr, sr = c(rx*0.5), s(rx*0.5)
-        cp, sp = c(ry*0.5), s(ry*0.5)
-        cy, sy = c(rz*0.5), s(rz*0.5)
-        qw = cr*cp*cy + sr*sp*sy
-        qx = sr*cp*cy - cr*sp*sy
-        qy = cr*sp*cy + sr*cp*sy
-        qz = cr*cp*sy - sr*sp*cy
+        cr, sr = c(rx * 0.5), s(rx * 0.5)
+        cp, sp = c(ry * 0.5), s(ry * 0.5)
+        cy, sy = c(rz * 0.5), s(rz * 0.5)
+        qw = cr * cp * cy + sr * sp * sy
+        qx = sr * cp * cy - cr * sp * sy
+        qy = cr * sp * cy + sr * cp * sy
+        qz = cr * cp * sy - sr * sp * cy
 
         R = pinocchio.Quaternion(qw, qx, qy, qz).toRotationMatrix()
         target = pinocchio.SE3(R, np.array([x, y, z]))
@@ -180,8 +190,7 @@ class ServolSimBridge(Node):
                 success = True
                 break
 
-            J = pinocchio.computeJointJacobian(
-                self._model, self._data, q, self._tip_joint_id)
+            J = pinocchio.computeJointJacobian(self._model, self._data, q, self._tip_joint_id)
             v = -np.linalg.pinv(J) @ err
             q = pinocchio.integrate(self._model, q, v * self._ik_dt)
 
@@ -200,15 +209,13 @@ class ServolSimBridge(Node):
                 positions[name] = msg.position[i]
         if len(positions) == self.ndof:
             with self._joints_lock:
-                self._current_joints = np.array([
-                    positions[name] for name in self.joint_names
-                ])
+                self._current_joints = np.array([positions[name] for name in self.joint_names])
 
     def _servol_callback(self, msg):
         """收到 servol 指令 → IK 求解 → 发送到 Gazebo position controller。"""
         target = list(msg.target_pose)
         if len(target) < 6:
-            self.get_logger().error(f'target_pose 长度不足: {len(target)}')
+            self.get_logger().error(f"target_pose 长度不足: {len(target)}")
             return
 
         # 单位换算：servol 使用 mm，Pinocchio 使用 m
@@ -221,8 +228,9 @@ class ServolSimBridge(Node):
 
         if q is None:
             self.get_logger().warning(
-                f'IK 求解失败 target=({target[0]:.1f}, {target[1]:.1f}, '
-                f'{target[2]:.1f})', throttle_duration_sec=2.0)
+                f"IK 求解失败 target=({target[0]:.1f}, {target[1]:.1f}, " f"{target[2]:.1f})",
+                throttle_duration_sec=2.0,
+            )
             return
 
         # 更新关节缓存为 IK 结果
@@ -247,5 +255,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

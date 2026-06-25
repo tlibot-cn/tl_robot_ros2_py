@@ -5,6 +5,7 @@ from std_srvs.srv import Trigger
 import tl_ros2_interface.srv as srvs
 import tl_ros2_interface.msg as msgs
 
+
 def main():
     rclpy.init()
     failures = 0
@@ -30,7 +31,7 @@ def main():
         failures += 0 if resp.success else 1
 
         # SetSpeed
-        if hasattr(srvs, 'SetSpeed'):
+        if hasattr(srvs, "SetSpeed"):
             req2 = srvs.SetSpeed.Request()
             req2.speed = 1.5
             resp2 = srvs.SetSpeed.Response()
@@ -62,11 +63,12 @@ def main():
             pass
 
     if failures == 0:
-        print('ALL TESTS PASSED')
+        print("ALL TESTS PASSED")
         sys.exit(0)
     else:
-        print(f'{failures} TEST(S) FAILED')
+        print(f"{failures} TEST(S) FAILED")
         sys.exit(2)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -9,6 +9,7 @@
   - 7轴机械臂：ros2 launch tl_teleop tl_teleop_7axis.launch.py
   - 通用（指定臂型）：ros2 launch tl_teleop tl_teleop.launch.py arm_type:=tcb605
 """
+
 import time
 import threading
 import math
@@ -111,139 +112,106 @@ class ArmTeleopNode(Node):
     """
 
     def __init__(self):
-        super().__init__('tl_teleop_node')
+        super().__init__("tl_teleop_node")
 
         # ========== 声明 ROS2 参数（默认值无效，必须通过 YAML 配置文件提供）==========
-        self.declare_parameter('arm_axis_mode', 0)
+        self.declare_parameter("arm_axis_mode", 0)
         # 位置控制
-        self.declare_parameter('pos_scale', 0.5)
-        self.declare_parameter('pos_deadzone', 0.005)
-        self.declare_parameter('max_pos_delta_mm', 300.0)
+        self.declare_parameter("pos_scale", 0.5)
+        self.declare_parameter("pos_deadzone", 0.005)
+        self.declare_parameter("max_pos_delta_mm", 300.0)
         # 日志
-        self.declare_parameter('log_interval', 1.0)
+        self.declare_parameter("log_interval", 1.0)
         # 奇异点防护
-        self.declare_parameter('joint_jump_threshold', 30.0)
-        self.declare_parameter('singular_angle', 160.0)
-        self.declare_parameter('singular_scale', 0.2)
-        self.declare_parameter('joint_limits', [0.0])
+        self.declare_parameter("joint_jump_threshold", 30.0)
+        self.declare_parameter("singular_angle", 160.0)
+        self.declare_parameter("singular_scale", 0.2)
+        self.declare_parameter("joint_limits", [0.0])
         # ServoJ 初始化
-        self.declare_parameter('servo_speed', 25.0)
-        self.declare_parameter('servo_vmax', 80.0)
-        self.declare_parameter('servo_amax', 3000.0)
-        self.declare_parameter('servo_jmax', 50000.0)
+        self.declare_parameter("servo_speed", 25.0)
+        self.declare_parameter("servo_vmax", 80.0)
+        self.declare_parameter("servo_amax", 3000.0)
+        self.declare_parameter("servo_jmax", 50000.0)
 
         # ========== 读取并校验关键参数 ==========
         self.arm_axis_mode_ = (
-            self.get_parameter('arm_axis_mode')
-            .get_parameter_value().integer_value
+            self.get_parameter("arm_axis_mode").get_parameter_value().integer_value
         )
         if self.arm_axis_mode_ not in (6, 7):
             self.get_logger().fatal(
-                f'arm_axis_mode 必须为 6 或 7，当前值: {self.arm_axis_mode_}。'
-                f'请通过 YAML 配置文件提供正确的 arm_axis_mode 参数。'
+                f"arm_axis_mode 必须为 6 或 7，当前值: {self.arm_axis_mode_}。"
+                f"请通过 YAML 配置文件提供正确的 arm_axis_mode 参数。"
             )
-            raise ValueError(
-                f'arm_axis_mode 必须为 6 或 7，当前值: {self.arm_axis_mode_}'
-            )
+            raise ValueError(f"arm_axis_mode 必须为 6 或 7，当前值: {self.arm_axis_mode_}")
 
         # 关节限位：从 YAML 扁平数组解析，必须与 arm_axis_mode 匹配
-        raw_limits = (
-            self.get_parameter('joint_limits')
-            .get_parameter_value().double_array_value
-        )
+        raw_limits = self.get_parameter("joint_limits").get_parameter_value().double_array_value
         expected_len = self.arm_axis_mode_ * 2
         if not raw_limits or len(raw_limits) != expected_len:
             self.get_logger().fatal(
-                f'joint_limits 与 arm_axis_mode 不匹配：'
-                f'arm_axis_mode={self.arm_axis_mode_}，'
-                f'期望 {expected_len} 个限位值，'
-                f'实际提供了 {len(raw_limits) if raw_limits else 0} 个。'
-                f'请检查 YAML 配置文件中的 joint_limits 参数。'
+                f"joint_limits 与 arm_axis_mode 不匹配："
+                f"arm_axis_mode={self.arm_axis_mode_}，"
+                f"期望 {expected_len} 个限位值，"
+                f"实际提供了 {len(raw_limits) if raw_limits else 0} 个。"
+                f"请检查 YAML 配置文件中的 joint_limits 参数。"
             )
             raise ValueError(
-                f'joint_limits 长度不匹配：期望 {expected_len}，'
-                f'实际 {len(raw_limits) if raw_limits else 0}'
+                f"joint_limits 长度不匹配：期望 {expected_len}，"
+                f"实际 {len(raw_limits) if raw_limits else 0}"
             )
         self.joint_limits_ = [
-            [raw_limits[i * 2], raw_limits[i * 2 + 1]]
-            for i in range(self.arm_axis_mode_)
+            [raw_limits[i * 2], raw_limits[i * 2 + 1]] for i in range(self.arm_axis_mode_)
         ]
 
         # 关节名称根据轴数自动生成
         self.joint_names = [f"joint{i+1}" for i in range(self.arm_axis_mode_)]
 
         # ========== 读取其余参数 ==========
-        self.pos_scale_ = (
-            self.get_parameter('pos_scale')
-            .get_parameter_value().double_value
-        )
-        self.pos_deadzone_ = (
-            self.get_parameter('pos_deadzone')
-            .get_parameter_value().double_value
-        )
+        self.pos_scale_ = self.get_parameter("pos_scale").get_parameter_value().double_value
+        self.pos_deadzone_ = self.get_parameter("pos_deadzone").get_parameter_value().double_value
         self.max_pos_delta_mm_ = (
-            self.get_parameter('max_pos_delta_mm')
-            .get_parameter_value().double_value
+            self.get_parameter("max_pos_delta_mm").get_parameter_value().double_value
         )
-        self.log_interval_ = (
-            self.get_parameter('log_interval')
-            .get_parameter_value().double_value
-        )
+        self.log_interval_ = self.get_parameter("log_interval").get_parameter_value().double_value
         self.joint_jump_threshold_ = (
-            self.get_parameter('joint_jump_threshold')
-            .get_parameter_value().double_value
+            self.get_parameter("joint_jump_threshold").get_parameter_value().double_value
         )
         self.singular_angle_ = (
-            self.get_parameter('singular_angle')
-            .get_parameter_value().double_value
+            self.get_parameter("singular_angle").get_parameter_value().double_value
         )
         self.singular_scale_ = (
-            self.get_parameter('singular_scale')
-            .get_parameter_value().double_value
+            self.get_parameter("singular_scale").get_parameter_value().double_value
         )
-        self.servo_speed_ = (
-            self.get_parameter('servo_speed')
-            .get_parameter_value().double_value
-        )
-        self.servo_vmax_ = (
-            self.get_parameter('servo_vmax')
-            .get_parameter_value().double_value
-        )
-        self.servo_amax_ = (
-            self.get_parameter('servo_amax')
-            .get_parameter_value().double_value
-        )
-        self.servo_jmax_ = (
-            self.get_parameter('servo_jmax')
-            .get_parameter_value().double_value
-        )
+        self.servo_speed_ = self.get_parameter("servo_speed").get_parameter_value().double_value
+        self.servo_vmax_ = self.get_parameter("servo_vmax").get_parameter_value().double_value
+        self.servo_amax_ = self.get_parameter("servo_amax").get_parameter_value().double_value
+        self.servo_jmax_ = self.get_parameter("servo_jmax").get_parameter_value().double_value
 
         # --- 服务客户端 ---
         self.set_current_mode_client = self.create_client(
-            SetCurrentMode, '/tl_driver/set_current_mode')
-        self.set_speed_client = self.create_client(
-            SetSpeed, '/tl_driver/set_speed')
-        self.open_servoj_client = self.create_client(
-            OpenServoJ, '/tl_driver/open_servoj')
-        self.close_servoj_client = self.create_client(
-            Trigger, '/tl_driver/close_servoj')
+            SetCurrentMode, "/tl_driver/set_current_mode"
+        )
+        self.set_speed_client = self.create_client(SetSpeed, "/tl_driver/set_speed")
+        self.open_servoj_client = self.create_client(OpenServoJ, "/tl_driver/open_servoj")
+        self.close_servoj_client = self.create_client(Trigger, "/tl_driver/close_servoj")
         self.coord_transform_client = self.create_client(
-            CoordTransform, '/tl_driver/coord_transform')
-        self.get_rpy2quat_client = self.create_client(
-            GetPosTransform, '/tl_driver/get_rpy2quat')
+            CoordTransform, "/tl_driver/coord_transform"
+        )
+        self.get_rpy2quat_client = self.create_client(GetPosTransform, "/tl_driver/get_rpy2quat")
 
         # --- 话题发布者 ---
         self.servoj_pos_pub = self.create_publisher(
-            Float64MultiArray, '/tl_driver/set_servoj_pos', 10)
-        self.joint_pub = self.create_publisher(
-            JointState, '/joint_states', 10)
+            Float64MultiArray, "/tl_driver/set_servoj_pos", 10
+        )
+        self.joint_pub = self.create_publisher(JointState, "/joint_states", 10)
 
         # --- 话题订阅者 ---
         self._tcp_lock = threading.Lock()
-        self._tcp_position = None    # [x, y, z] mm
-        self._tcp_rpy = None         # [r, p, y] 弧度
+        self._tcp_position = None  # [x, y, z] mm
+        self._tcp_rpy = None  # [r, p, y] 弧度
         self.tcp_pose_sub = self.create_subscription(
-            CartesianPose, '/tcp_pose', self._tcp_pose_cb, 10)
+            CartesianPose, "/tcp_pose", self._tcp_pose_cb, 10
+        )
 
         # --- 关节状态 ---
         self.last_joints = None
@@ -283,12 +251,12 @@ class ArmTeleopNode(Node):
     def wait_for_services(self, timeout: float = 10.0) -> bool:
         """等待所有必要服务就绪。"""
         services = [
-            (self.set_current_mode_client, '/tl_driver/set_current_mode'),
-            (self.set_speed_client, '/tl_driver/set_speed'),
-            (self.open_servoj_client, '/tl_driver/open_servoj'),
-            (self.close_servoj_client, '/tl_driver/close_servoj'),
-            (self.coord_transform_client, '/tl_driver/coord_transform'),
-            (self.get_rpy2quat_client, '/tl_driver/get_rpy2quat'),
+            (self.set_current_mode_client, "/tl_driver/set_current_mode"),
+            (self.set_speed_client, "/tl_driver/set_speed"),
+            (self.open_servoj_client, "/tl_driver/open_servoj"),
+            (self.close_servoj_client, "/tl_driver/close_servoj"),
+            (self.coord_transform_client, "/tl_driver/coord_transform"),
+            (self.get_rpy2quat_client, "/tl_driver/get_rpy2quat"),
         ]
         all_ready = True
         for client, name in services:
@@ -376,14 +344,12 @@ class ArmTeleopNode(Node):
         tmp_executor = SingleThreadedExecutor()
         tmp_executor.add_node(self)
         try:
-            tmp_executor.spin_until_future_complete(
-                future, timeout_sec=timeout_sec)
+            tmp_executor.spin_until_future_complete(future, timeout_sec=timeout_sec)
         finally:
             tmp_executor.remove_node(self)
 
         if not future.done():
-            self.get_logger().warning(
-                f"关闭 ServoJ 超时 ({timeout_sec}s)，可能未成功关闭")
+            self.get_logger().warning(f"关闭 ServoJ 超时 ({timeout_sec}s)，可能未成功关闭")
             return False
 
         result = future.result()
@@ -417,19 +383,18 @@ class ArmTeleopNode(Node):
         返回关节角列表（长度 = arm_axis_mode），失败返回 None。
         """
         req = CoordTransform.Request()
-        req.origin_coord = 1       # 直角坐标系（输入）
-        req.target_coord = 0       # 关节坐标系（输出）
-        req.form = 0               # 逆解模式
+        req.origin_coord = 1  # 直角坐标系（输入）
+        req.target_coord = 0  # 关节坐标系（输出）
+        req.form = 0  # 逆解模式
         # 位姿：[x(mm), y(mm), z(mm), rx(rad), ry(rad), rz(rad), arm_angle(rad)]
-        req.origin_pos = [float(x), float(y), float(z),
-                          float(rx), float(ry), float(rz), 0.0]
+        req.origin_pos = [float(x), float(y), float(z), float(rx), float(ry), float(rz), 0.0]
         req.reference_pos = [0.0] * 7
 
         try:
             result = self.coord_transform_client.call(req)
             if result.success and len(result.target_pos) >= self.arm_axis_mode_:
                 full_joints = list(result.target_pos)
-                return full_joints[:self.arm_axis_mode_]
+                return full_joints[: self.arm_axis_mode_]
             if not result.success:
                 self.get_logger().warning(f"逆运动学失败: {result.message}")
         except Exception as e:
@@ -454,8 +419,7 @@ class ArmTeleopNode(Node):
         if self.last_joints is not None:
             for a, b in zip(joint_target, self.last_joints):
                 if abs(a - b) > self.joint_jump_threshold_:
-                    self.get_logger().warn(
-                        f"关节突变过大: {abs(a - b):.1f}°，已丢弃")
+                    self.get_logger().warn(f"关节突变过大: {abs(a - b):.1f}°，已丢弃")
                     return
         self.last_joints = joint_target.copy()
 
@@ -477,14 +441,12 @@ class ArmTeleopNode(Node):
         # 日志打印
         now = time.time()
         if now - self.last_log_time > self.log_interval_:
-            self.get_logger().info(
-                f"[JOINT] {[round(i, 3) for i in joint_target]}")
+            self.get_logger().info(f"[JOINT] {[round(i, 3) for i in joint_target]}")
             self.last_log_time = now
 
     def clamp_joints(self, joints):
         """将关节角裁剪到配置的硬限位范围内。"""
-        return [max(low, min(high, val))
-                for val, (low, high) in zip(joints, self.joint_limits_)]
+        return [max(low, min(high, val)) for val, (low, high) in zip(joints, self.joint_limits_)]
 
 
 # ========== 纯控制循环（100Hz）==========
@@ -555,16 +517,18 @@ def control_loop_func(node: ArmTeleopNode):
             if node.last_joints is not None:
                 if node.arm_axis_mode_ == 6:
                     j5, j6 = node.last_joints[4], node.last_joints[5]
-                    scale = (node.singular_scale_
-                             if abs(j5) > node.singular_angle_
-                             or abs(j6) > node.singular_angle_
-                             else 1.0)
+                    scale = (
+                        node.singular_scale_
+                        if abs(j5) > node.singular_angle_ or abs(j6) > node.singular_angle_
+                        else 1.0
+                    )
                 else:
                     j6, j7 = node.last_joints[5], node.last_joints[6]
-                    scale = (node.singular_scale_
-                             if abs(j6) > node.singular_angle_
-                             or abs(j7) > node.singular_angle_
-                             else 1.0)
+                    scale = (
+                        node.singular_scale_
+                        if abs(j6) > node.singular_angle_ or abs(j7) > node.singular_angle_
+                        else 1.0
+                    )
             else:
                 scale = 1.0
 
@@ -581,8 +545,7 @@ def control_loop_func(node: ArmTeleopNode):
 
             # 姿态最短旋转
             vr_quat_wxyz = [qw, qx, qy, qz]
-            vr_home_quat_wxyz = [vr_home_quat[3], vr_home_quat[0],
-                                 vr_home_quat[1], vr_home_quat[2]]
+            vr_home_quat_wxyz = [vr_home_quat[3], vr_home_quat[0], vr_home_quat[1], vr_home_quat[2]]
             if sum(a * b for a, b in zip(vr_quat_wxyz, vr_home_quat_wxyz)) < 0:
                 vr_quat_wxyz = [-v for v in vr_quat_wxyz]
 
@@ -596,7 +559,8 @@ def control_loop_func(node: ArmTeleopNode):
             target_ry = -target_ry
 
             ik = node.call_inverse_kinematics(
-                target_x, target_y, target_z, target_rx, target_ry, target_rz)
+                target_x, target_y, target_z, target_rx, target_ry, target_rz
+            )
             if ik:
                 node.servoJ_send(ik)
 
@@ -617,8 +581,7 @@ def main_control_loop(node: ArmTeleopNode):
         node.get_logger().fatal("ServoJ 初始化失败")
         return
 
-    node.get_logger().info(
-        f"{node.arm_axis_mode_}轴机械臂就绪，开始遥操作（已加固奇异点）")
+    node.get_logger().info(f"{node.arm_axis_mode_}轴机械臂就绪，开始遥操作（已加固奇异点）")
 
     # 运行控制循环（阻塞直到 shutdown_event 被设置）
     control_loop_func(node)
@@ -661,8 +624,7 @@ def main():
     vr_thread.start()
 
     # 启动遥操作编排子线程（内部完成 init_servoj → 控制循环）
-    ctrl_thread = threading.Thread(
-        target=main_control_loop, args=(node,), daemon=True)
+    ctrl_thread = threading.Thread(target=main_control_loop, args=(node,), daemon=True)
     ctrl_thread.start()
 
     # --- 初始化完毕，现在接管 SIGINT，阻止 rclpy 自动 shutdown ---
@@ -716,8 +678,7 @@ def main():
                 msg = result.message if result else "无响应"
                 node.get_logger().warning(f"ServoJ 关闭返回失败: {msg}")
         else:
-            node.get_logger().warning(
-                "ServoJ 关闭超时（3s），可能未成功关闭")
+            node.get_logger().warning("ServoJ 关闭超时（3s），可能未成功关闭")
     else:
         node.get_logger().warning("无法发起关闭 ServoJ 请求")
 
@@ -729,8 +690,7 @@ def main():
     # 超时后由主线程兜底调用 xrt.close() 确保 SDK 资源释放
     vr_thread.join(timeout=2.0)
     if vr_thread.is_alive():
-        node.get_logger().warning(
-            "VR 读取线程未能在 2s 内退出，将在主线程中清理 SDK")
+        node.get_logger().warning("VR 读取线程未能在 2s 内退出，将在主线程中清理 SDK")
         try:
             xrt.close()
             print("[INFO] 遥感设备已在主线程中断开")
@@ -744,5 +704,5 @@ def main():
     print("[INFO] 程序结束")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

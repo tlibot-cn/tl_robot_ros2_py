@@ -22,13 +22,14 @@ except Exception:
     try:
         import sys
         import importlib.util
-        lib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'lib'))
-        tl_path = os.path.join(lib_dir, 'tl_interface.py')
+
+        lib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "lib"))
+        tl_path = os.path.join(lib_dir, "tl_interface.py")
         if os.path.exists(tl_path):
             # Ensure the native module _tl_host can be imported from lib_dir
             if lib_dir not in sys.path:
                 sys.path.insert(0, lib_dir)
-            spec = importlib.util.spec_from_file_location('tl_interface', tl_path)
+            spec = importlib.util.spec_from_file_location("tl_interface", tl_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             tl_interface = mod
@@ -63,10 +64,12 @@ def _check_host_reachable(host: str, timeout: float = 1.0) -> bool:
     to connect_robot().
     """
     import subprocess as _sp
+
     try:
         ret = _sp.run(
-            ['ping', '-c', '1', '-W', str(int(timeout)), host],
-            capture_output=True, timeout=timeout + 1
+            ["ping", "-c", "1", "-W", str(int(timeout)), host],
+            capture_output=True,
+            timeout=timeout + 1,
         )
         return ret.returncode == 0
     except Exception:
@@ -75,26 +78,28 @@ def _check_host_reachable(host: str, timeout: float = 1.0) -> bool:
 
 class TLArmNode(Node):
     def __init__(self):
-        super().__init__('tl_driver')
+        super().__init__("tl_driver")
 
         # parameters
-        self.declare_parameter('arm_ip', '192.168.1.13')
-        self.declare_parameter('arm_port', '6001')
-        self.declare_parameter('arm_port_aux', '7000')
-        self.declare_parameter('arm_type', 'TCB605')
-        self.declare_parameter('arm_joints', ['joint1','joint2','joint3','joint4','joint5','joint6'])
+        self.declare_parameter("arm_ip", "192.168.1.13")
+        self.declare_parameter("arm_port", "6001")
+        self.declare_parameter("arm_port_aux", "7000")
+        self.declare_parameter("arm_type", "TCB605")
+        self.declare_parameter(
+            "arm_joints", ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+        )
 
         # read parameters
-        self.arm_ip_ = self.get_parameter('arm_ip').value
-        self.arm_port_ = self.get_parameter('arm_port').value
-        self.arm_port_aux_ = self.get_parameter('arm_port_aux').value
-        self.arm_type_ = self.get_parameter('arm_type').value
-        self.arm_joints_ = self.get_parameter('arm_joints').value
+        self.arm_ip_ = self.get_parameter("arm_ip").value
+        self.arm_port_ = self.get_parameter("arm_port").value
+        self.arm_port_aux_ = self.get_parameter("arm_port_aux").value
+        self.arm_type_ = self.get_parameter("arm_type").value
+        self.arm_joints_ = self.get_parameter("arm_joints").value
 
         # dof
         self.ndof_ = len(self.arm_joints_)
 
-        self.get_logger().info(f'arm_type={self.arm_type_}, ndof={self.ndof_}')
+        self.get_logger().info(f"arm_type={self.arm_type_}, ndof={self.ndof_}")
 
         # callback groups for multi-threaded executor (matching C++ node)
         self.service_group_ = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
@@ -102,176 +107,508 @@ class TLArmNode(Node):
         self.timer_group_ = rclpy.callback_groups.ReentrantCallbackGroup()
 
         # publishers
-        self.joint_state_pub = self.create_publisher(JointState, '/joint_states', 10)
+        self.joint_state_pub = self.create_publisher(JointState, "/joint_states", 10)
         # create tcp_pose publisher if message available
         try:
-            self.tcp_pose_pub = self.create_publisher(msgs.CartesianPose, '/tcp_pose', 10)
+            self.tcp_pose_pub = self.create_publisher(msgs.CartesianPose, "/tcp_pose", 10)
         except Exception:
-            self.get_logger().warning('CartesianPose message not available; /tcp_pose publisher skipped')
+            self.get_logger().warning(
+                "CartesianPose message not available; /tcp_pose publisher skipped"
+            )
             self.tcp_pose_pub = None
 
         # create running status publisher; if ArmStatus not available, fallback to std_msgs.String
         try:
-            self.running_status_pub = self.create_publisher(msgs.ArmStatus, '/arm_status', 10)
+            self.running_status_pub = self.create_publisher(msgs.ArmStatus, "/arm_status", 10)
             self._running_status_fallback = False
         except Exception:
-            self.get_logger().warning('ArmStatus message not available; publishing /arm_status as std_msgs.String')
-            self.running_status_pub = self.create_publisher(std_msgs.String, '/arm_status', 10)
+            self.get_logger().warning(
+                "ArmStatus message not available; publishing /arm_status as std_msgs.String"
+            )
+            self.running_status_pub = self.create_publisher(std_msgs.String, "/arm_status", 10)
             self._running_status_fallback = True
 
         # services
-        self.create_service(Trigger, '/tl_driver/connect_arm', self.handle_connect_service, callback_group=self.service_group_)
-        self.create_service(Trigger, '/tl_driver/disconnect_arm', self.handle_disconnect_service, callback_group=self.service_group_)
-        self.create_service(Trigger, '/tl_driver/power_on', self.handle_poweron_service, callback_group=self.service_group_)
-        self.create_service(Trigger, '/tl_driver/power_off', self.handle_poweroff_service, callback_group=self.service_group_)
-        self.create_service(Trigger, '/tl_driver/clear_error', self.handle_clear_error_service, callback_group=self.service_group_)
-        self.create_service(Trigger, '/tl_driver/get_controller_id', self.handle_get_controller_id_service, callback_group=self.service_group_)
+        self.create_service(
+            Trigger,
+            "/tl_driver/connect_arm",
+            self.handle_connect_service,
+            callback_group=self.service_group_,
+        )
+        self.create_service(
+            Trigger,
+            "/tl_driver/disconnect_arm",
+            self.handle_disconnect_service,
+            callback_group=self.service_group_,
+        )
+        self.create_service(
+            Trigger,
+            "/tl_driver/power_on",
+            self.handle_poweron_service,
+            callback_group=self.service_group_,
+        )
+        self.create_service(
+            Trigger,
+            "/tl_driver/power_off",
+            self.handle_poweroff_service,
+            callback_group=self.service_group_,
+        )
+        self.create_service(
+            Trigger,
+            "/tl_driver/clear_error",
+            self.handle_clear_error_service,
+            callback_group=self.service_group_,
+        )
+        self.create_service(
+            Trigger,
+            "/tl_driver/get_controller_id",
+            self.handle_get_controller_id_service,
+            callback_group=self.service_group_,
+        )
 
         # typed service from interface package
         try:
-            self.create_service(srvs.SetSpeed, '/tl_driver/set_speed', self.handle_set_speed_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetSpeed,'/tl_driver/get_speed', self.handle_get_speed_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_quat2rpy', self.handle_get_quat2rpy_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_rpy2quat', self.handle_get_rpy2quat_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_rpy2r', self.handle_get_rpy2r_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_tr2r', self.handle_get_tr2r_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetPosTransform, '/tl_driver/get_r2tr', self.handle_get_r2tr_service, callback_group=self.service_group_)
-            self.create_service(srvs.SetControllerIP, '/tl_driver/set_controller_ip', self.handle_set_controller_ip_service, callback_group=self.service_group_)
-            
+            self.create_service(
+                srvs.SetSpeed,
+                "/tl_driver/set_speed",
+                self.handle_set_speed_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetSpeed,
+                "/tl_driver/get_speed",
+                self.handle_get_speed_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetPosTransform,
+                "/tl_driver/get_quat2rpy",
+                self.handle_get_quat2rpy_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetPosTransform,
+                "/tl_driver/get_rpy2quat",
+                self.handle_get_rpy2quat_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetPosTransform,
+                "/tl_driver/get_rpy2r",
+                self.handle_get_rpy2r_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetPosTransform,
+                "/tl_driver/get_tr2r",
+                self.handle_get_tr2r_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetPosTransform,
+                "/tl_driver/get_r2tr",
+                self.handle_get_r2tr_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.SetControllerIP,
+                "/tl_driver/set_controller_ip",
+                self.handle_set_controller_ip_service,
+                callback_group=self.service_group_,
+            )
+
         except Exception:
-            self.get_logger().warning('SetSpeed service type not available; skipping')
+            self.get_logger().warning("SetSpeed service type not available; skipping")
 
         # jogging & drag services
         try:
-            self.create_service(srvs.Jogging, '/tl_driver/start_jogging', self.handle_start_jogging_service, callback_group=self.service_group_)
-            self.create_service(srvs.Jogging, '/tl_driver/stop_jogging', self.handle_stop_jogging_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetRobotState, '/tl_driver/get_robot_state', self.handle_get_robot_state_service, callback_group=self.service_group_)
-            self.create_service(Trigger, '/tl_driver/get_library_version', self.handle_get_library_version_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetRobotJointParam, '/tl_driver/get_robot_joint_param', self.handle_get_robot_joint_param_service, callback_group=self.service_group_)
-            self.create_service(srvs.SetRobotJointParam, '/tl_driver/set_robot_joint_param', self.handle_set_robot_joint_param_service, callback_group=self.service_group_)
-            self.create_service(Trigger, '/tl_driver/get_drag_status', self.handle_get_drag_status_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.Jogging,
+                "/tl_driver/start_jogging",
+                self.handle_start_jogging_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.Jogging,
+                "/tl_driver/stop_jogging",
+                self.handle_stop_jogging_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetRobotState,
+                "/tl_driver/get_robot_state",
+                self.handle_get_robot_state_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                Trigger,
+                "/tl_driver/get_library_version",
+                self.handle_get_library_version_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetRobotJointParam,
+                "/tl_driver/get_robot_joint_param",
+                self.handle_get_robot_joint_param_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.SetRobotJointParam,
+                "/tl_driver/set_robot_joint_param",
+                self.handle_set_robot_joint_param_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                Trigger,
+                "/tl_driver/get_drag_status",
+                self.handle_get_drag_status_service,
+                callback_group=self.service_group_,
+            )
 
         except Exception:
-            self.get_logger().warning('Jogging/Drag service types not available; skipping')
-        
+            self.get_logger().warning("Jogging/Drag service types not available; skipping")
+
         # system_status
         try:
-            self.create_service(srvs.GetJointTemperature, '/tl_driver/get_joint_temperature', self.handle_get_joint_temperature_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetJointVoltage, '/tl_driver/get_joint_voltage', self.handle_get_joint_voltage_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetMotorCurrent, '/tl_driver/get_motor_current', self.handle_get_motor_current_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetCurrentMotorTorque, '/tl_driver/get_current_motor_torque', self.handle_get_current_motor_torque_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetCurrentLineJointSpeed, '/tl_driver/get_current_line_joint_speed', self.handle_get_current_line_joint_speed_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetJointSoftwareVersion, '/tl_driver/get_joint_software_version', self.handle_get_joint_software_version_service, callback_group=self.service_group_)
-            self.create_service(Trigger, '/tl_driver/get_nexmotion_lib_version', self.handle_get_nexmotion_lib_version_service, callback_group=self.service_group_)
-            self.create_service(srvs.RestoreDefaultDHParam, '/tl_driver/restore_default_dh_param', self.handle_restore_default_dh_param_service, callback_group=self.service_group_)
-            self.create_service(Trigger, '/tl_driver/set_default_cartesian_param', self.handle_set_default_cartesian_param_service, callback_group=self.service_group_)
-            self.create_service(srvs.LogDownload, '/tl_driver/log_download', self.handle_log_download_service, callback_group=self.service_group_)
-            self.create_service(srvs.SetDragMode, '/tl_driver/set_drag_mode', self.handle_set_drag_mode_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.GetJointTemperature,
+                "/tl_driver/get_joint_temperature",
+                self.handle_get_joint_temperature_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetJointVoltage,
+                "/tl_driver/get_joint_voltage",
+                self.handle_get_joint_voltage_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetMotorCurrent,
+                "/tl_driver/get_motor_current",
+                self.handle_get_motor_current_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetCurrentMotorTorque,
+                "/tl_driver/get_current_motor_torque",
+                self.handle_get_current_motor_torque_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetCurrentLineJointSpeed,
+                "/tl_driver/get_current_line_joint_speed",
+                self.handle_get_current_line_joint_speed_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetJointSoftwareVersion,
+                "/tl_driver/get_joint_software_version",
+                self.handle_get_joint_software_version_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                Trigger,
+                "/tl_driver/get_nexmotion_lib_version",
+                self.handle_get_nexmotion_lib_version_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.RestoreDefaultDHParam,
+                "/tl_driver/restore_default_dh_param",
+                self.handle_restore_default_dh_param_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                Trigger,
+                "/tl_driver/set_default_cartesian_param",
+                self.handle_set_default_cartesian_param_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.LogDownload,
+                "/tl_driver/log_download",
+                self.handle_log_download_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.SetDragMode,
+                "/tl_driver/set_drag_mode",
+                self.handle_set_drag_mode_service,
+                callback_group=self.service_group_,
+            )
 
         except Exception:
-            self.get_logger().warning('system_status service types not available; skipping')
+            self.get_logger().warning("system_status service types not available; skipping")
 
         # queue services
         try:
-            self.create_service(srvs.QueueMotionSetStatus, '/tl_driver/queue_motion_set_status', self.handle_queue_motion_set_status_service, callback_group=self.service_group_)
-            self.create_service(srvs.QueueMotionMoveJ, '/tl_driver/queue_motion_movej', self.handle_queue_motion_movej_service, callback_group=self.service_group_)
-            self.create_service(Trigger, '/tl_driver/queue_motion_stop', self.handle_queue_motion_stop_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.QueueMotionSetStatus,
+                "/tl_driver/queue_motion_set_status",
+                self.handle_queue_motion_set_status_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.QueueMotionMoveJ,
+                "/tl_driver/queue_motion_movej",
+                self.handle_queue_motion_movej_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                Trigger,
+                "/tl_driver/queue_motion_stop",
+                self.handle_queue_motion_stop_service,
+                callback_group=self.service_group_,
+            )
         except Exception:
-            self.get_logger().warning('Queue motion service types not available; skipping')
+            self.get_logger().warning("Queue motion service types not available; skipping")
 
         # tool / coordinate services and IO/Modbus
         try:
-            self.create_service(srvs.SetToolParam, '/tl_driver/set_tool_param', self.handle_set_tool_param_service, callback_group=self.service_group_)
-            self.create_service(srvs.SetUserCoord, '/tl_driver/set_user_coord', self.handle_set_user_coord_service, callback_group=self.service_group_)
-            self.create_service(srvs.SetAxisZeroPos, '/tl_driver/set_axis_zero_pos', self.handle_set_axis_zero_pos_service, callback_group=self.service_group_)
-            self.create_service(srvs.SetCurrentCoord, '/tl_driver/set_current_coord', self.handle_set_current_coord_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetCoordNum, '/tl_driver/get_coord_num', self.handle_get_coord_num_service, callback_group=self.service_group_)
-        
+            self.create_service(
+                srvs.SetToolParam,
+                "/tl_driver/set_tool_param",
+                self.handle_set_tool_param_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.SetUserCoord,
+                "/tl_driver/set_user_coord",
+                self.handle_set_user_coord_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.SetAxisZeroPos,
+                "/tl_driver/set_axis_zero_pos",
+                self.handle_set_axis_zero_pos_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.SetCurrentCoord,
+                "/tl_driver/set_current_coord",
+                self.handle_set_current_coord_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetCoordNum,
+                "/tl_driver/get_coord_num",
+                self.handle_get_coord_num_service,
+                callback_group=self.service_group_,
+            )
+
             # additional services mirroring C++ node
-            self.create_service(srvs.GetAllJobFileName, '/tl_driver/get_all_job_filename', self.handle_get_all_job_filename_service, callback_group=self.service_group_)
-            self.create_service(srvs.JobRun, '/tl_driver/job_run', self.handle_job_run_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.GetAllJobFileName,
+                "/tl_driver/get_all_job_filename",
+                self.handle_get_all_job_filename_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.JobRun,
+                "/tl_driver/job_run",
+                self.handle_job_run_service,
+                callback_group=self.service_group_,
+            )
             # job delete
-            self.create_service(srvs.JobRun, '/tl_driver/job_delete', self.handle_job_delete_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.JobRun,
+                "/tl_driver/job_delete",
+                self.handle_job_delete_service,
+                callback_group=self.service_group_,
+            )
             # job insert (matching C++: changed from topic to service)
-            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_moveJ', self.handle_job_insert_movej_service, callback_group=self.service_group_)
-            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_moveL', self.handle_job_insert_movel_service, callback_group=self.service_group_)
-            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_iMove', self.handle_job_insert_imove_service, callback_group=self.service_group_)
-            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_imove', self.handle_job_insert_imove_service, callback_group=self.service_group_)
-            self.create_service(srvs.JobInsertMove, '/tl_driver/job_insert_moveC', self.handle_job_insert_movec_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.JobInsertMove,
+                "/tl_driver/job_insert_moveJ",
+                self.handle_job_insert_movej_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.JobInsertMove,
+                "/tl_driver/job_insert_moveL",
+                self.handle_job_insert_movel_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.JobInsertMove,
+                "/tl_driver/job_insert_iMove",
+                self.handle_job_insert_imove_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.JobInsertMove,
+                "/tl_driver/job_insert_imove",
+                self.handle_job_insert_imove_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.JobInsertMove,
+                "/tl_driver/job_insert_moveC",
+                self.handle_job_insert_movec_service,
+                callback_group=self.service_group_,
+            )
             # set/get global pos, coord transform, reachable checks
-            self.create_service(srvs.SetGlobalPos, '/tl_driver/set_global_pos', self.handle_set_global_pos_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetGlobalPos, '/tl_driver/get_global_pos', self.handle_get_global_pos_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.SetGlobalPos,
+                "/tl_driver/set_global_pos",
+                self.handle_set_global_pos_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetGlobalPos,
+                "/tl_driver/get_global_pos",
+                self.handle_get_global_pos_service,
+                callback_group=self.service_group_,
+            )
             try:
-                self.create_service(srvs.CoordTransform, '/tl_driver/coord_transform', self.handle_coord_transform_service, callback_group=self.service_group_)
+                self.create_service(
+                    srvs.CoordTransform,
+                    "/tl_driver/coord_transform",
+                    self.handle_coord_transform_service,
+                    callback_group=self.service_group_,
+                )
             except Exception:
                 # coord transform may not have SWIG mapping
                 pass
-            self.create_service(srvs.GetPosReachable, '/tl_driver/get_pos_reachable', self.handle_get_pos_reachable_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetDHParam, '/tl_driver/get_dh_param', self.handle_get_dh_param_service, callback_group=self.service_group_)
-            self.create_service(srvs.SetDHParam, '/tl_driver/set_dh_param', self.handle_set_dh_param_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.GetPosReachable,
+                "/tl_driver/get_pos_reachable",
+                self.handle_get_pos_reachable_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetDHParam,
+                "/tl_driver/get_dh_param",
+                self.handle_get_dh_param_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.SetDHParam,
+                "/tl_driver/set_dh_param",
+                self.handle_set_dh_param_service,
+                callback_group=self.service_group_,
+            )
 
             # set current mode and servoj close
             try:
-                self.create_service(srvs.SetCurrentMode, '/tl_driver/set_current_mode', self.handle_set_current_mode_service, callback_group=self.service_group_)
-                self.create_service(srvs.GetCurrentMode,"/tl_driver/get_current_mode", self.handle_get_current_mode_service, callback_group=self.service_group_)
+                self.create_service(
+                    srvs.SetCurrentMode,
+                    "/tl_driver/set_current_mode",
+                    self.handle_set_current_mode_service,
+                    callback_group=self.service_group_,
+                )
+                self.create_service(
+                    srvs.GetCurrentMode,
+                    "/tl_driver/get_current_mode",
+                    self.handle_get_current_mode_service,
+                    callback_group=self.service_group_,
+                )
             except Exception:
                 pass
-            self.create_service(Trigger, '/tl_driver/close_servoj', self.handle_close_servoj_service, callback_group=self.service_group_)
+            self.create_service(
+                Trigger,
+                "/tl_driver/close_servoj",
+                self.handle_close_servoj_service,
+                callback_group=self.service_group_,
+            )
 
-            self.create_service(srvs.SetDigitalOutput, '/tl_driver/set_digital_output', self.handle_set_digital_output_service, callback_group=self.service_group_)
-            self.create_service(srvs.GetDigitalInputOutput, '/tl_driver/get_digital_input_output', self.handle_get_digital_input_output_service, callback_group=self.service_group_)
-            self.create_service(srvs.ModbusWrite, '/tl_driver/modbus_write', self.handle_modbus_write_service, callback_group=self.service_group_)
-            self.create_service(srvs.ModbusRead, '/tl_driver/modbus_read', self.handle_modbus_read_service, callback_group=self.service_group_)
+            self.create_service(
+                srvs.SetDigitalOutput,
+                "/tl_driver/set_digital_output",
+                self.handle_set_digital_output_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.GetDigitalInputOutput,
+                "/tl_driver/get_digital_input_output",
+                self.handle_get_digital_input_output_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.ModbusWrite,
+                "/tl_driver/modbus_write",
+                self.handle_modbus_write_service,
+                callback_group=self.service_group_,
+            )
+            self.create_service(
+                srvs.ModbusRead,
+                "/tl_driver/modbus_read",
+                self.handle_modbus_read_service,
+                callback_group=self.service_group_,
+            )
             # track/trajectory
             try:
-                self.create_service(srvs.TrackSave, '/tl_driver/track_save', self.handle_track_save_service, callback_group=self.service_group_)
-                self.create_service(srvs.TrackPlayback, '/tl_driver/track_playback', self.handle_track_playback_service, callback_group=self.service_group_)
+                self.create_service(
+                    srvs.TrackSave,
+                    "/tl_driver/track_save",
+                    self.handle_track_save_service,
+                    callback_group=self.service_group_,
+                )
+                self.create_service(
+                    srvs.TrackPlayback,
+                    "/tl_driver/track_playback",
+                    self.handle_track_playback_service,
+                    callback_group=self.service_group_,
+                )
             except Exception:
                 pass
             try:
-                self.create_service(srvs.OpenServoJ, '/tl_driver/open_servoj', self.handle_open_servoj_service, callback_group=self.service_group_)
+                self.create_service(
+                    srvs.OpenServoJ,
+                    "/tl_driver/open_servoj",
+                    self.handle_open_servoj_service,
+                    callback_group=self.service_group_,
+                )
             except Exception:
                 pass
         except Exception:
-            self.get_logger().warning('Tool/Coord or IO/Modbus service types not available; skipping')
+            self.get_logger().warning(
+                "Tool/Coord or IO/Modbus service types not available; skipping"
+            )
 
         # subscriptions for move commands and job insert
         try:
             self.movej_sub = self.create_subscription(
                 msgs.MoveCommand,
-                '/tl_driver/moveJ',
+                "/tl_driver/moveJ",
                 self.handle_movej_topic,
                 10,
-                callback_group=self.topic_group_)
+                callback_group=self.topic_group_,
+            )
 
             self.movel_sub = self.create_subscription(
                 msgs.MoveCommand,
-                '/tl_driver/moveL',
+                "/tl_driver/moveL",
                 self.handle_movel_topic,
                 10,
-                callback_group=self.topic_group_)
+                callback_group=self.topic_group_,
+            )
             # set_servoj position topic (matches C++ node)
             try:
                 self.set_servoj_pos_sub = self.create_subscription(
                     std_msgs.Float64MultiArray,
-                    '/tl_driver/set_servoj_pos',
+                    "/tl_driver/set_servoj_pos",
                     self.handle_set_servoj_pos_topic,
                     10,
-                    callback_group=self.topic_group_)
+                    callback_group=self.topic_group_,
+                )
             except Exception:
-                self.get_logger().warning('set_servoj_pos message type not available; skipping')
+                self.get_logger().warning("set_servoj_pos message type not available; skipping")
             # set_servol (笛卡尔直线伺服) topic — 放在 servoj 下方
             try:
                 self.set_servol_pos_sub = self.create_subscription(
                     msgs.ServolMove,
-                    '/tl_driver/set_servol_pos',
+                    "/tl_driver/set_servol_pos",
                     self.handle_set_servol_pos_topic,
                     10,
-                    callback_group=self.topic_group_)
+                    callback_group=self.topic_group_,
+                )
             except Exception:
-                self.get_logger().warning('ServolMove msg type not available; skipping')
+                self.get_logger().warning("ServolMove msg type not available; skipping")
         except Exception:
-            self.get_logger().warning('Move/Job message types not available; skipping subscriptions')
+            self.get_logger().warning(
+                "Move/Job message types not available; skipping subscriptions"
+            )
 
         # example subscriber (placeholder)
         # self.create_subscription(...)
@@ -280,7 +617,7 @@ class TLArmNode(Node):
         period = 1.0 / float(self.publish_rate)
         self.create_timer(period, self.publish_arm_state, callback_group=self.timer_group_)
 
-        self.get_logger().info('tl_driver (python) node started')
+        self.get_logger().info("tl_driver (python) node started")
 
         # native interface socket fds (set by connect)
         self.fd = None
@@ -302,7 +639,7 @@ class TLArmNode(Node):
 
         # lock to prevent concurrent connect/disconnect calls
         self._conn_lock = threading.Lock()
-    
+
     def on_robot_state_message(self, message):
         self.get_logger().info("=== 收到机器人状态回调 ===")
         self.latest_robot_state = str(message)
@@ -312,10 +649,10 @@ class TLArmNode(Node):
 
     def handle_trigger(self, request, response):
         response.success = True
-        response.message = 'ok'
+        response.message = "ok"
         return response
 
-    def _valid_fd(self, fd_attr='fd') -> bool:
+    def _valid_fd(self, fd_attr="fd") -> bool:
         """Return True if the given fd attribute exists and is a positive integer."""
         fd = getattr(self, fd_attr, None)
         if fd is None:
@@ -330,35 +667,35 @@ class TLArmNode(Node):
     def connect(self) -> bool:
         # Mirror the C++ connect() behavior: connect both primary and auxiliary ports,
         # require positive socket fds, register callbacks, and mark connected.
-        self.get_logger().info('connect() called')
-        self.get_logger().info(f'tl_interface file = {tl_interface.__file__}')
+        self.get_logger().info("connect() called")
+        self.get_logger().info(f"tl_interface file = {tl_interface.__file__}")
 
         if self.is_connected_:
-            self.get_logger().info('[Connect]: arm already connected')
+            self.get_logger().info("[Connect]: arm already connected")
             return True
 
         try:
-            ip = self.get_parameter('arm_ip').get_parameter_value().string_value
-            port = self.get_parameter('arm_port').get_parameter_value().string_value
-            port_aux = self.get_parameter('arm_port_aux').get_parameter_value().string_value
-            self.get_logger().info(f'ip={repr(ip)}, port={repr(port)}, port_aux={repr(port_aux)}')
+            ip = self.get_parameter("arm_ip").get_parameter_value().string_value
+            port = self.get_parameter("arm_port").get_parameter_value().string_value
+            port_aux = self.get_parameter("arm_port_aux").get_parameter_value().string_value
+            self.get_logger().info(f"ip={repr(ip)}, port={repr(port)}, port_aux={repr(port_aux)}")
         except Exception:
-            ip, port, port_aux = '192.168.1.13', '6001', '7000'
+            ip, port, port_aux = "192.168.1.13", "6001", "7000"
 
         # Check if the port is reachable
         if not _check_host_reachable(ip, timeout=1.0):
-            self.get_logger().warning(f'Host {ip} is not reachable (ping failed)')
+            self.get_logger().warning(f"Host {ip} is not reachable (ping failed)")
             return False
 
         try:
             fd = None
             fd_aux = None
-            self.get_logger().info('Attempting native connect_robot calls')
-            if tl_interface is not None and hasattr(tl_interface, 'connect_robot'):
+            self.get_logger().info("Attempting native connect_robot calls")
+            if tl_interface is not None and hasattr(tl_interface, "connect_robot"):
                 try:
                     fd = tl_interface.connect_robot(ip, port)
                 except Exception as e:
-                    self.get_logger().error(f'tl_interface.connect_robot() primary raised: {e}')
+                    self.get_logger().error(f"tl_interface.connect_robot() primary raised: {e}")
                     fd = None
 
                 try:
@@ -366,18 +703,18 @@ class TLArmNode(Node):
                 except Exception:
                     fd_aux = None
 
-            self.get_logger().info(f'native connect returned fd={fd}, fd_aux={fd_aux}')
+            self.get_logger().info(f"native connect returned fd={fd}, fd_aux={fd_aux}")
 
             # validate fds (C++ treats <=0 as failure)
             try:
                 if fd is None or int(fd) <= 0:
-                    self.get_logger().error(f'[Connect]: failed to connect to {ip}:{port}')
+                    self.get_logger().error(f"[Connect]: failed to connect to {ip}:{port}")
                     self.fd = 0
                     self.fd_aux = 0
                     self.is_connected_ = False
                     return False
             except Exception:
-                self.get_logger().error('[Connect]: invalid fd from connect_robot')
+                self.get_logger().error("[Connect]: invalid fd from connect_robot")
                 self.fd = 0
                 self.fd_aux = 0
                 self.is_connected_ = False
@@ -385,13 +722,13 @@ class TLArmNode(Node):
 
             try:
                 if fd_aux is None or int(fd_aux) <= 0:
-                    self.get_logger().error(f'[Connect]: failed to connect to {ip}:{port_aux}')
+                    self.get_logger().error(f"[Connect]: failed to connect to {ip}:{port_aux}")
                     self.fd = 0
                     self.fd_aux = 0
                     self.is_connected_ = False
                     return False
             except Exception:
-                self.get_logger().warning('[Connect]: invalid fd_aux from connect_robot')
+                self.get_logger().warning("[Connect]: invalid fd_aux from connect_robot")
 
             # store fds and mark connected
             self.fd = fd
@@ -416,26 +753,40 @@ class TLArmNode(Node):
 
             # register receive callbacks if available
             try:
-                if tl_interface is not None and hasattr(tl_interface, 'set_receive_error_or_warnning_message_callback'):
+                if tl_interface is not None and hasattr(
+                    tl_interface, "set_receive_error_or_warnning_message_callback"
+                ):
+
                     def _receive_cb(messageType, message, messageCode):
                         try:
-                            self.get_logger().warning(f'receive messageType={messageType}, code={messageCode}, msg={message}')
+                            self.get_logger().warning(
+                                f"receive messageType={messageType}, code={messageCode}, msg={message}"
+                            )
                         except Exception:
                             pass
+
                     try:
-                        tl_interface.set_receive_error_or_warnning_message_callback(self.fd, _receive_cb)
+                        tl_interface.set_receive_error_or_warnning_message_callback(
+                            self.fd, _receive_cb
+                        )
                     except Exception:
                         pass
 
                 # start recv_message on auxiliary fd to capture asynchronous messages from controller
-                if tl_interface is not None and hasattr(tl_interface, 'recv_message') and self.fd_aux is not None:
+                if (
+                    tl_interface is not None
+                    and hasattr(tl_interface, "recv_message")
+                    and self.fd_aux is not None
+                ):
                     try:
+
                         def _recv_msg_cb(msg_id, msg):
                             try:
-                                self.get_logger().info(f'recv_message id={msg_id} msg={msg}')
+                                self.get_logger().info(f"recv_message id={msg_id} msg={msg}")
                                 # store or handle as needed
                             except Exception:
                                 pass
+
                         tl_interface.recv_message(self.fd_aux, _recv_msg_cb)
                     except Exception:
                         pass
@@ -445,25 +796,27 @@ class TLArmNode(Node):
             # self.get_logger().info(f'[Connect]: successfully connected to arm at {ip}:{port},{port_aux}')
             return True
         except Exception as e:
-            self.get_logger().error(f'connect() failed: {e}')
+            self.get_logger().error(f"connect() failed: {e}")
             self.fd = 0
             self.fd_aux = 0
             self.is_connected_ = False
             return False
-        
+
     def _startup_connect(self):
         # Simplified startup connect: attempt connect and power_on once.
         try:
-            ip = self.get_parameter('arm_ip').get_parameter_value().string_value
-            port = self.get_parameter('arm_port').get_parameter_value().string_value
-            port_aux = self.get_parameter('arm_port_aux').get_parameter_value().string_value
+            ip = self.get_parameter("arm_ip").get_parameter_value().string_value
+            port = self.get_parameter("arm_port").get_parameter_value().string_value
+            port_aux = self.get_parameter("arm_port_aux").get_parameter_value().string_value
         except Exception:
-            ip, port, port_aux = '192.168.1.13', '6001', '7000'
+            ip, port, port_aux = "192.168.1.13", "6001", "7000"
 
-        self.get_logger().info(f'Trying to connect to {ip}:{port},{port_aux}')
+        self.get_logger().info(f"Trying to connect to {ip}:{port},{port_aux}")
         ok = self.connect()
         if ok and self._valid_fd():
-            self.get_logger().info(f'[Connect]: successfully connected to arm at {ip}:{port},{port_aux}')
+            self.get_logger().info(
+                f"[Connect]: successfully connected to arm at {ip}:{port},{port_aux}"
+            )
             try:
                 self.power_on()
             except Exception:
@@ -474,9 +827,9 @@ class TLArmNode(Node):
 
         Returns True on success (servo_state == 3), False otherwise.
         """
-        self.get_logger().info('power_on() called')
+        self.get_logger().info("power_on() called")
         if tl_interface is None or self.fd is None:
-            self.get_logger().warning('power_on: tl_interface or fd missing')
+            self.get_logger().warning("power_on: tl_interface or fd missing")
             return False
 
         ret, state = tl_interface.get_servo_state(self.fd, -1)
@@ -510,13 +863,13 @@ class TLArmNode(Node):
                 ret = tl_interface.set_servo_poweron(self.fd)
                 self.get_logger().info(f"after set_servo_poweron ret={ret}")
             elif state == 3:
-                self.get_logger().info('[PowerOn]: already power on')
+                self.get_logger().info("[PowerOn]: already power on")
                 self.is_powered_ = True
                 return True
         except Exception as e:
-            self.get_logger().warning(f'power_on sequence failed: {e}')
+            self.get_logger().warning(f"power_on sequence failed: {e}")
 
-        ret, state = tl_interface.get_servo_state(self.fd, -1) 
+        ret, state = tl_interface.get_servo_state(self.fd, -1)
         if ret == 0 and state == 3:
             self.is_powered_ = True
             self.get_logger().info(f"[PowerOn]: successfully power on, " f"servo_state = {state}")
@@ -527,16 +880,16 @@ class TLArmNode(Node):
 
     def power_off(self) -> bool:
         """Power off sequence mirroring C++ TL_Arm::power_off()."""
-        self.get_logger().info('power_off() called')
+        self.get_logger().info("power_off() called")
         if tl_interface is None or self.fd is None:
-            self.get_logger().warning('power_off: tl_interface or fd missing')
+            self.get_logger().warning("power_off: tl_interface or fd missing")
             return False
 
         def _read_servo_state():
             try:
                 r = tl_interface.get_servo_state(self.fd, 0)
             except Exception as e:
-                self.get_logger().warning(f'get_servo_state call failed: {e}')
+                self.get_logger().warning(f"get_servo_state call failed: {e}")
                 return None
             if isinstance(r, (list, tuple)) and len(r) >= 2:
                 try:
@@ -551,41 +904,45 @@ class TLArmNode(Node):
         state = _read_servo_state()
         try:
             if state == 3:
-                if hasattr(tl_interface, 'set_servo_poweroff'):
+                if hasattr(tl_interface, "set_servo_poweroff"):
                     tl_interface.set_servo_poweroff(self.fd)
                     new_state = _read_servo_state()
-                    self.get_logger().info(f'[PowerOff]: servo_state after off = {new_state}')
+                    self.get_logger().info(f"[PowerOff]: servo_state after off = {new_state}")
                     self.is_powered_ = False
                     return True
             elif state == 1:
-                self.get_logger().info('[PowerOff]: already power off')
+                self.get_logger().info("[PowerOff]: already power off")
                 self.is_powered_ = False
                 return True
         except Exception as e:
-            self.get_logger().warning(f'power_off sequence failed: {e}')
+            self.get_logger().warning(f"power_off sequence failed: {e}")
 
-        self.get_logger().info(f'[PowerOff]: fail to power off, servo_state = {state}')
+        self.get_logger().info(f"[PowerOff]: fail to power off, servo_state = {state}")
         return False
 
     # service handlers
     def disconnect(self) -> bool:
         """Disconnect from robot controller and clear internal state."""
-        self.get_logger().info('disconnect() called')
-        with getattr(self, '_conn_lock', threading.Lock()):
+        self.get_logger().info("disconnect() called")
+        with getattr(self, "_conn_lock", threading.Lock()):
             try:
                 if tl_interface is not None:
                     try:
-                        if self._valid_fd() and hasattr(tl_interface, 'disconnect_robot'):
+                        if self._valid_fd() and hasattr(tl_interface, "disconnect_robot"):
                             tl_interface.disconnect_robot(self.fd)
                     except Exception:
                         pass
                     try:
-                        if self.fd_aux is not None and int(self.fd_aux) > 0 and hasattr(tl_interface, 'disconnect_robot'):
+                        if (
+                            self.fd_aux is not None
+                            and int(self.fd_aux) > 0
+                            and hasattr(tl_interface, "disconnect_robot")
+                        ):
                             tl_interface.disconnect_robot(self.fd_aux)
                     except Exception:
                         pass
             except Exception as e:
-                self.get_logger().warning(f'disconnect: exception during native disconnect: {e}')
+                self.get_logger().warning(f"disconnect: exception during native disconnect: {e}")
 
             # clear state
             try:
@@ -596,30 +953,31 @@ class TLArmNode(Node):
             except Exception:
                 pass
 
-        self.get_logger().info('[Disconnect]: completed')
+        self.get_logger().info("[Disconnect]: completed")
         return True
+
     def handle_connect_service(self, request, response):
         ok = self.connect()
         response.success = bool(ok)
-        response.message = 'connected' if ok else 'failed to connect'
+        response.message = "connected" if ok else "failed to connect"
         return response
 
     def handle_disconnect_service(self, request, response):
         ok = self.disconnect()
         response.success = bool(ok)
-        response.message = 'disconnected' if ok else 'failed to disconnect'
+        response.message = "disconnected" if ok else "failed to disconnect"
         return response
 
     def handle_poweron_service(self, request, response):
         ok = self.power_on()
         response.success = bool(ok)
-        response.message = 'powered on' if ok else 'failed to power on'
+        response.message = "powered on" if ok else "failed to power on"
         return response
 
     def handle_poweroff_service(self, request, response):
         ok = self.power_off()
         response.success = bool(ok)
-        response.message = 'powered off' if ok else 'failed to power off'
+        response.message = "powered off" if ok else "failed to power off"
         return response
 
     def handle_clear_error_service(self, request, response):
@@ -635,11 +993,11 @@ class TLArmNode(Node):
 
             if ret_state == 0 and state == 2:
                 ret = tl_interface.clear_error(self.fd)
-                response.success = (ret == 0)
+                response.success = ret == 0
                 if response.success:
-                    response.message = ("Clear error successfully")
+                    response.message = "Clear error successfully"
                 else:
-                    response.message = (f"Clear error failed: {ret}")
+                    response.message = f"Clear error failed: {ret}"
             else:
                 response.success = False
                 response.message = "Not an error state"
@@ -647,7 +1005,7 @@ class TLArmNode(Node):
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_clear_error_service failed: {e}')
+            self.get_logger().error(f"handle_clear_error_service failed: {e}")
 
         return response
 
@@ -657,12 +1015,12 @@ class TLArmNode(Node):
             speed = float(request.speed)
         except Exception:
             response.success = False
-            response.message = 'invalid speed'
+            response.message = "invalid speed"
             return response
 
         # placeholder: pass to tl_interface if available
         ok = True
-        if tl_interface is not None and self._valid_fd() and hasattr(tl_interface, 'set_speed'):
+        if tl_interface is not None and self._valid_fd() and hasattr(tl_interface, "set_speed"):
             try:
                 # SWIG binding expects an integer argument for speed
                 _ret = tl_interface.set_speed(self.fd, int(speed))
@@ -674,15 +1032,14 @@ class TLArmNode(Node):
                 else:
                     ok = bool(_ret)
                 if not ok:
-                    self.get_logger().error(f'tl_interface.set_speed() returned: {_ret}')
+                    self.get_logger().error(f"tl_interface.set_speed() returned: {_ret}")
             except Exception as e:
-                self.get_logger().error(f'tl_interface.set_speed() failed: {e}')
+                self.get_logger().error(f"tl_interface.set_speed() failed: {e}")
                 ok = False
 
         response.success = bool(ok)
-        response.message = 'Set speed successfully' if ok else 'Failed to set speed'
+        response.message = "Set speed successfully" if ok else "Failed to set speed"
         return response
-    
 
     def handle_get_speed_service(self, request, response):
         _ = request
@@ -699,7 +1056,7 @@ class TLArmNode(Node):
                 response.success = False
                 response.message = "Failed to get speed"
                 return response
-            
+
             response.success = True
             response.message = "Get speed successfully"
             response.speed = float(speed)
@@ -707,7 +1064,7 @@ class TLArmNode(Node):
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_get_speed_service failed: {e}')
+            self.get_logger().error(f"handle_get_speed_service failed: {e}")
 
         return response
 
@@ -745,12 +1102,10 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(
-                f'handle_get_quat2rpy_service failed: {e}'
-            )
+            self.get_logger().error(f"handle_get_quat2rpy_service failed: {e}")
 
         return response
-    
+
     def handle_get_rpy2quat_service(self, request, response):
 
         if self.fd is None or not self.is_connected_:
@@ -786,7 +1141,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_get_rpy2quat_service failed: {e}')
+            self.get_logger().error(f"handle_get_rpy2quat_service failed: {e}")
 
         return response
 
@@ -822,7 +1177,7 @@ class TLArmNode(Node):
             response.message = str(e)
             self.get_logger().error(f"handle_get_rpy2r_service failed: {e}")
 
-        return response    
+        return response
 
     def handle_get_tr2r_service(self, request, response):
         if self.fd is None or not self.is_connected_:
@@ -899,7 +1254,9 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret = tl_interface.set_controller_ip(self.fd, request.name, request.addr, request.gateway, request.dns)
+            ret = tl_interface.set_controller_ip(
+                self.fd, request.name, request.addr, request.gateway, request.dns
+            )
 
             self.get_logger().info(
                 f"set_controller_ip ret={ret}, "
@@ -908,7 +1265,7 @@ class TLArmNode(Node):
                 f"gateway={request.gateway}, "
                 f"dns={request.dns}"
             )
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Set controller IP successfully"
             else:
@@ -932,10 +1289,10 @@ class TLArmNode(Node):
         try:
             controller_id = tl_interface.string(128)  # 分配128字节char*
             ret = tl_interface.get_controller_id(self.fd, id)
-            id_str = controller_id.value.decode('utf-8', 'ignore').strip()
+            id_str = controller_id.value.decode("utf-8", "ignore").strip()
             self.get_logger().info(f"get_controller_id ret={ret}, id={id_str}")
             # self.get_logger().info(f"get_controller_id ret={ret}, id={controller_id}")
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = id_str
@@ -960,8 +1317,8 @@ class TLArmNode(Node):
         try:
             cmd = tl_interface.MoveCmd()
 
-            cmd.targetPosType = tl_interface.PosType_data  
-            cmd.targetPosName = ""                          
+            cmd.targetPosType = tl_interface.PosType_data
+            cmd.targetPosName = ""
 
             cmd.coord = msg.coord
             cmd.velocity = msg.velocity
@@ -1058,8 +1415,12 @@ class TLArmNode(Node):
             cmd.targetPosValue = target_pos
 
             ret = tl_interface.job_insert_moveJ(self.fd, line, cmd)
-            response.success = (ret == 0)
-            response.message = "Job insert movej successfully" if response.success else "Failed to insert job movej"
+            response.success = ret == 0
+            response.message = (
+                "Job insert movej successfully"
+                if response.success
+                else "Failed to insert job movej"
+            )
             self.get_logger().info(f"[JobInsertMoveJ]: ret={ret}")
 
         except Exception as e:
@@ -1103,8 +1464,12 @@ class TLArmNode(Node):
             cmd.targetPosValue = target_pos
 
             ret = tl_interface.job_insert_moveL(self.fd, line, cmd)
-            response.success = (ret == 0)
-            response.message = "Job insert movel successfully" if response.success else "Failed to insert job movel"
+            response.success = ret == 0
+            response.message = (
+                "Job insert movel successfully"
+                if response.success
+                else "Failed to insert job movel"
+            )
             self.get_logger().info(f"[JobInsertMoveL]: ret={ret}")
 
         except Exception as e:
@@ -1148,8 +1513,12 @@ class TLArmNode(Node):
             cmd.targetPosValue = target_pos
 
             ret = tl_interface.job_insert_imove(self.fd, line, cmd)
-            response.success = (ret == 0)
-            response.message = "Job insert imove successfully" if response.success else "Failed to insert job imove"
+            response.success = ret == 0
+            response.message = (
+                "Job insert imove successfully"
+                if response.success
+                else "Failed to insert job imove"
+            )
             self.get_logger().info(f"[JobInsertIMove]: ret={ret}")
 
         except Exception as e:
@@ -1193,8 +1562,12 @@ class TLArmNode(Node):
             cmd.targetPosValue = target_pos
 
             ret = tl_interface.job_insert_moveC(self.fd, line, cmd)
-            response.success = (ret == 0)
-            response.message = "Job insert movec successfully" if response.success else "Failed to insert job movec"
+            response.success = ret == 0
+            response.message = (
+                "Job insert movec successfully"
+                if response.success
+                else "Failed to insert job movec"
+            )
             self.get_logger().info(f"[JobInsertMoveC]: ret={ret}")
 
         except Exception as e:
@@ -1219,7 +1592,7 @@ class TLArmNode(Node):
         # self.get_logger().info(f"DEBUG: robots_file size = {robots_file.size()}")
         # self.get_logger().info(f"DEBUG: robots_file content = {robots_file}")
 
-        response.success = (ret == 0)  # 0 = SUCCESS
+        response.success = ret == 0  # 0 = SUCCESS
         if response.success:
             response.message = "Get all job filename successfully"
         else:
@@ -1244,7 +1617,6 @@ class TLArmNode(Node):
 
         return response
 
-
     def handle_job_run_service(self, request, response):
         if self.fd is None or not self.is_connected_:
             response.success = False
@@ -1256,7 +1628,7 @@ class TLArmNode(Node):
             ret = tl_interface.job_open(self.fd, job_name)
             ret1 = tl_interface.job_run(self.fd, job_name)
             self.get_logger().info(f"job_open ret={ret}, job_run ret1={ret1}, job_name={job_name}")
-            response.success = (ret1 == 0)
+            response.success = ret1 == 0
             if response.success:
                 response.message = "Job run successfully"
             else:
@@ -1264,11 +1636,10 @@ class TLArmNode(Node):
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_job_run_service failed: {e}')
-        
-                        
+            self.get_logger().error(f"handle_job_run_service failed: {e}")
+
         self.power_off()
-        self.power_on()   # power on again to be ready for next command
+        self.power_on()  # power on again to be ready for next command
 
         return response
 
@@ -1277,22 +1648,26 @@ class TLArmNode(Node):
             job_name = str(request.job_name)
         except Exception:
             response.success = False
-            response.message = 'invalid request'
+            response.message = "invalid request"
             return response
         ok = True
         try:
-            if tl_interface is not None and hasattr(tl_interface, 'job_delete'):
+            if tl_interface is not None and hasattr(tl_interface, "job_delete"):
                 try:
-                    res = tl_interface.job_delete(self.fd, job_name) if self._valid_fd() else tl_interface.job_delete(job_name)
+                    res = (
+                        tl_interface.job_delete(self.fd, job_name)
+                        if self._valid_fd()
+                        else tl_interface.job_delete(job_name)
+                    )
                     ok = _is_success(res)
                 except TypeError:
                     res = tl_interface.job_delete(job_name)
                     ok = _is_success(res)
         except Exception as e:
-            self.get_logger().error(f'job_delete failed: {e}')
+            self.get_logger().error(f"job_delete failed: {e}")
             ok = False
         response.success = bool(ok)
-        response.message = 'deleted' if ok else 'failed'
+        response.message = "deleted" if ok else "failed"
         return response
 
     def handle_set_current_mode_service(self, request, response):
@@ -1312,7 +1687,7 @@ class TLArmNode(Node):
 
             self.get_logger().info(f"set_current_mode ret={ret}, mode={request.mode}")
 
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
                 "Set current mode successfully"
                 if response.success
@@ -1320,7 +1695,7 @@ class TLArmNode(Node):
             )
 
         except Exception as e:
-            self.get_logger().error(f'handle_set_current_mode_service failed: {e}')
+            self.get_logger().error(f"handle_set_current_mode_service failed: {e}")
             response.success = False
             response.message = str(e)
 
@@ -1338,7 +1713,7 @@ class TLArmNode(Node):
 
             # 赋值
             response.mode = mode
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Get current mode successfully"
             else:
@@ -1350,7 +1725,7 @@ class TLArmNode(Node):
             response.mode = -1
 
         return response
-    
+
     def handle_close_servoj_service(self, request, response):
         if self.fd_aux is None or not self.is_connected_:
             response.success = False
@@ -1359,7 +1734,7 @@ class TLArmNode(Node):
 
         try:
             ret = tl_interface.close_servoJ(self.fd_aux)
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "ServoJ close successfully"
             else:
@@ -1371,7 +1746,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_close_servoj_service failed: {e}')
+            self.get_logger().error(f"handle_close_servoj_service failed: {e}")
 
         return response
 
@@ -1430,7 +1805,7 @@ class TLArmNode(Node):
 
     def _quat_slerp(self, q1, q2, t):
         """四元数球面线性插值 Slerp"""
-        dot = q1[0]*q2[0] + q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3]
+        dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3]
 
         # 处理负点积 — 取最短路径
         if dot < 0.0:
@@ -1442,7 +1817,7 @@ class TLArmNode(Node):
         if dot > DOT_THRESHOLD:
             # 角度极小，线性插值后归一化
             result = [q1[i] + t * (q2[i] - q1[i]) for i in range(4)]
-            norm = math.sqrt(sum(v*v for v in result))
+            norm = math.sqrt(sum(v * v for v in result))
             return [v / norm for v in result]
 
         theta_0 = math.acos(dot)
@@ -1483,14 +1858,16 @@ class TLArmNode(Node):
             dx = target_pose[0] - cur_pose[0]
             dy = target_pose[1] - cur_pose[1]
             dz = target_pose[2] - cur_pose[2]
-            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+            dist = math.sqrt(dx * dx + dy * dy + dz * dz)
 
             step_size = float(msg.step_size)
             if step_size <= 0.0:
                 step_size = 2.0  # 默认步长 2mm
 
             N = max(1, int(math.ceil(dist / step_size)))
-            self.get_logger().info(f"[ServoL] received: dist={dist:.1f}mm, step={step_size}, divided into {N} points")
+            self.get_logger().info(
+                f"[ServoL] received: dist={dist:.1f}mm, step={step_size}, divided into {N} points"
+            )
 
             # ========= 3. 准备 IK 参数 =========
             # 目标坐标系为关节空间(0)，需从笛卡尔(coord)转换
@@ -1534,9 +1911,9 @@ class TLArmNode(Node):
                     self.fd,
                     coord,
                     interp_pos,
-                    0,           # target_coord = 0 (关节)
+                    0,  # target_coord = 0 (关节)
                     joint_pos,
-                    0,           # form = 0
+                    0,  # form = 0
                     ref_pos,
                 )
 
@@ -1549,7 +1926,9 @@ class TLArmNode(Node):
                 # 通过 servoj 发送关节角
                 ret = tl_interface.set_servoJ_pos(self.fd_aux, joint_pos)
                 if ret != 0:
-                    self.get_logger().warn(f"[ServoL] set_servoJ_pos failed at point {i}/{N}, ret={ret}")
+                    self.get_logger().warn(
+                        f"[ServoL] set_servoJ_pos failed at point {i}/{N}, ret={ret}"
+                    )
                     # 即使发送失败，也继续下一插值点
 
                 # accumulative timing
@@ -1571,6 +1950,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = "Arm is not connected"
             return response
+
         # 检查全局点名称是否合法
         def is_valid_gp(name: str) -> bool:
             try:
@@ -1591,7 +1971,9 @@ class TLArmNode(Node):
 
         try:
             pos_info = list(request.pos_info)
-            self.get_logger().info(f"set_global_position pos_name={request.pos_name}, " f"pos_info={pos_info}")
+            self.get_logger().info(
+                f"set_global_position pos_name={request.pos_name}, " f"pos_info={pos_info}"
+            )
 
             vec = tl_interface.VectorDouble()
             for v in pos_info:
@@ -1599,7 +1981,7 @@ class TLArmNode(Node):
 
             ret = tl_interface.set_global_position(self.fd, request.pos_name, vec)
             self.get_logger().info(f"set_global_position ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Set global pos successfully"
@@ -1610,7 +1992,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_set_global_pos_service failed: {e}')
+            self.get_logger().error(f"handle_set_global_pos_service failed: {e}")
 
         return response
 
@@ -1630,30 +2012,31 @@ class TLArmNode(Node):
                 return 1 <= num <= 9999
             except Exception:
                 return False
+
         if not is_valid_gp(request.pos_name):
             response.success = False
             response.message = "Invalid global pos name"
             return response
-        
+
         try:
             # vector<double>
             pos = tl_interface.VectorDouble()
-            ret = tl_interface.get_global_position(self.fd,request.pos_name,pos)
+            ret = tl_interface.get_global_position(self.fd, request.pos_name, pos)
             # self.get_logger().info(f"get_global_position ret={ret}")
             # self.get_logger().info(f"pos len={len(pos)}")
             # self.get_logger().info(f"pos vals={[pos[i] for i in range(len(pos))]}")
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
-                response.message = ("Get global pos successfully")
-                response.pos = [float(pos[i])for i in range(len(pos))]
+                response.message = "Get global pos successfully"
+                response.pos = [float(pos[i]) for i in range(len(pos))]
             else:
-                response.message = ("Failed to get global pos")
+                response.message = "Failed to get global pos"
                 response.pos = []
 
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_get_global_pos_service failed: {e}')
+            self.get_logger().error(f"handle_get_global_pos_service failed: {e}")
 
         return response
 
@@ -1695,11 +2078,11 @@ class TLArmNode(Node):
                 int(request.target_coord),
                 target_pos,
                 int(request.form),
-                reference_pos
+                reference_pos,
             )
 
             # 结果判断
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Coord transform successfully"
@@ -1735,29 +2118,31 @@ class TLArmNode(Node):
             for v in request.pos:
                 query_pos.append(float(v))
             # bool& 输出参数
-            ret, reachable = tl_interface.get_pos_reachable(self.fd, query_pos, request.move_type, False)
-            self.get_logger().info(f"get_pos_reachable ret={ret}, "f"reachable={reachable}")
+            ret, reachable = tl_interface.get_pos_reachable(
+                self.fd, query_pos, request.move_type, False
+            )
+            self.get_logger().info(f"get_pos_reachable ret={ret}, " f"reachable={reachable}")
             if ret == 0:
                 response.success = bool(reachable)
                 if response.success:
-                    response.message = ("Target pos is reachable")
+                    response.message = "Target pos is reachable"
                 else:
-                    response.message = ("Target pos is not reachable")
+                    response.message = "Target pos is not reachable"
             else:
                 response.success = False
-                response.message = ("Fail to get pos reachable status")
+                response.message = "Fail to get pos reachable status"
 
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_get_pos_reachable_service failed: {e}')
+            self.get_logger().error(f"handle_get_pos_reachable_service failed: {e}")
         return response
 
     def handle_get_dh_param_service(self, request, response):
         dh_param = tl_interface.RobotDHParam()
         ret = tl_interface.get_robot_dh_param(self.fd, dh_param)
 
-        response.success = (ret == 0)
+        response.success = ret == 0
         if response.success:
             response.message = "Get DH param successfully"
         else:
@@ -1848,7 +2233,7 @@ class TLArmNode(Node):
 
         response.param = param_msg
         return response
-    
+
     def handle_set_dh_param_service(self, request, response):
 
         try:
@@ -1932,7 +2317,7 @@ class TLArmNode(Node):
             # 调用SDK
             ret = tl_interface.set_robot_dh_param(self.fd, dh_param)
 
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Set DH param successfully"
             else:
@@ -1960,7 +2345,7 @@ class TLArmNode(Node):
         try:
             ret = tl_interface.track_record_save(self.fd, request.traj_name)
             self.get_logger().info(f"track_record_save ret={ret}, traj_name={request.traj_name}")
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Track save successfully"
             else:
@@ -1969,7 +2354,7 @@ class TLArmNode(Node):
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_track_save_service failed: {e}')
+            self.get_logger().error(f"handle_track_save_service failed: {e}")
 
         return response
 
@@ -1982,7 +2367,7 @@ class TLArmNode(Node):
         try:
             ret = tl_interface.track_record_playback(self.fd, request.vel)
             self.get_logger().info(f"track_record_playback ret={ret}, vel={request.vel}")
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Track playback successfully"
             else:
@@ -1992,7 +2377,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_track_playback_service failed: {e}')
+            self.get_logger().error(f"handle_track_playback_service failed: {e}")
 
         return response
 
@@ -2014,11 +2399,9 @@ class TLArmNode(Node):
             self.get_logger().info(f"open_servoJ ret={ret}")
 
             # ========= 3. response =========
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
-                "ServoJ open successfully"
-                if response.success
-                else "Failed to open ServoJ"
+                "ServoJ open successfully" if response.success else "Failed to open ServoJ"
             )
 
             return response
@@ -2038,20 +2421,15 @@ class TLArmNode(Node):
 
         try:
             # 设置连续运动状态
-            ret = tl_interface.queue_motion_set_status(
-                self.fd,
-                request.status
-            )
+            ret = tl_interface.queue_motion_set_status(self.fd, request.status)
 
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Set queue motion status successfully"
             else:
                 response.message = "Failed to set queue motion status"
 
-            self.get_logger().info(
-                f"queue_motion_set_status ret={ret}, status={request.status}"
-            )
+            self.get_logger().info(f"queue_motion_set_status ret={ret}, status={request.status}")
             # 关闭连续运动模式后设置为示教模式
             if not request.status:
                 ret_mode = tl_interface.set_current_mode(self.fd, 0)
@@ -2064,7 +2442,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_queue_motion_set_status_service failed: {e}')
+            self.get_logger().error(f"handle_queue_motion_set_status_service failed: {e}")
 
         return response
 
@@ -2113,7 +2491,7 @@ class TLArmNode(Node):
 
             self.get_logger().info(f"queue_send ret={ret}")
 
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
                 "Queue motion moveJ execute successfully"
                 if response.success
@@ -2135,14 +2513,9 @@ class TLArmNode(Node):
             return response
 
         try:
-            ret, status = tl_interface.queue_motion_get_status(
-                self.fd,
-                False
-            )
+            ret, status = tl_interface.queue_motion_get_status(self.fd, False)
 
-            self.get_logger().info(
-                f"queue_motion_get_status ret={ret}, status={status}"
-            )
+            self.get_logger().info(f"queue_motion_get_status ret={ret}, status={status}")
 
             if ret != 0:
                 response.success = False
@@ -2157,7 +2530,7 @@ class TLArmNode(Node):
             # 停止 queue motion
             ret = tl_interface.queue_motion_stop_not_power_off(self.fd)
             self.get_logger().info(f"queue_motion_stop_not_power_off ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Queue motion moveJ stop successfully"
             else:
@@ -2167,7 +2540,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_queue_motion_stop_service failed: {e}')
+            self.get_logger().error(f"handle_queue_motion_stop_service failed: {e}")
 
         return response
 
@@ -2179,11 +2552,7 @@ class TLArmNode(Node):
 
         try:
             # 获取机械臂自由度
-            ndof = len(
-                self.get_parameter('arm_joints')
-                .get_parameter_value()
-                .string_array_value
-            )
+            ndof = len(self.get_parameter("arm_joints").get_parameter_value().string_array_value)
 
             # 检查轴号是否合法
             if request.axis < 1 or request.axis > ndof:
@@ -2192,14 +2561,13 @@ class TLArmNode(Node):
                 return response
 
             self.get_logger().info(
-                f"robot_start_jogging axis={request.axis}, "
-                f"direction={request.direction}"
+                f"robot_start_jogging axis={request.axis}, " f"direction={request.direction}"
             )
 
             # 调用底层接口
             ret = tl_interface.robot_start_jogging(self.fd, request.axis, request.direction)
             self.get_logger().info(f"robot_start_jogging ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Start jogging successfully"
@@ -2210,9 +2578,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(
-                f'handle_start_jogging_service failed: {e}'
-            )
+            self.get_logger().error(f"handle_start_jogging_service failed: {e}")
 
         return response
 
@@ -2224,11 +2590,7 @@ class TLArmNode(Node):
 
         try:
             # 获取机械臂自由度
-            ndof = len(
-                self.get_parameter('arm_joints')
-                .get_parameter_value()
-                .string_array_value
-            )
+            ndof = len(self.get_parameter("arm_joints").get_parameter_value().string_array_value)
 
             # 检查轴号是否合法
             if request.axis < 1 or request.axis > ndof:
@@ -2241,7 +2603,7 @@ class TLArmNode(Node):
             # 调用底层接口
             ret = tl_interface.robot_stop_jogging(self.fd, request.axis)
             self.get_logger().info(f"robot_stop_jogging ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Stop jogging successfully"
@@ -2252,12 +2614,10 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(
-                f'handle_stop_jogging_service failed: {e}'
-            )
+            self.get_logger().error(f"handle_stop_jogging_service failed: {e}")
 
         return response
-    
+
     def handle_get_robot_state_service(self, request, response):
 
         if self.fd_aux is None or not self.is_connected_:
@@ -2318,9 +2678,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(
-                f"handle_get_robot_state_service failed: {e}"
-            )
+            self.get_logger().error(f"handle_get_robot_state_service failed: {e}")
 
             return response
 
@@ -2347,7 +2705,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
             return response
-        
+
     def handle_get_robot_joint_param_service(self, request, response):
         if not self.is_connected_:
             response.success = False
@@ -2390,7 +2748,7 @@ class TLArmNode(Node):
             response.message = "Failed to get robot joint param"
 
         return response
-    
+
     def handle_set_robot_joint_param_service(self, request, response):
 
         try:
@@ -2425,7 +2783,7 @@ class TLArmNode(Node):
             # 调用底层接口
             ret = tl_interface.set_robot_joint_param(self.fd, request.id, param)
             self.get_logger().info(f"set_robot_joint_param ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
                 "Set robot joint param successfully"
                 if ret == 0
@@ -2433,17 +2791,15 @@ class TLArmNode(Node):
             )
 
         except Exception as e:
-            self.get_logger().error(
-                f"handle_set_robot_joint_param_service failed: {e}"
-            )
+            self.get_logger().error(f"handle_set_robot_joint_param_service failed: {e}")
             response.success = False
             response.message = f"call failed: {e}"
 
         self.power_off()
-        self.power_on() 
+        self.power_on()
 
         return response
-    
+
     def handle_set_drag_mode_service(self, request, response):
         try:
             if not self.is_connected_:
@@ -2458,7 +2814,7 @@ class TLArmNode(Node):
 
             ret = tl_interface.set_darg_mode(self.fd, request.mode)
 
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Set drag mode successfully"
@@ -2481,7 +2837,7 @@ class TLArmNode(Node):
                 response.success = False
                 response.message = "Arm is not connected"
                 return response
-            
+
             # for name in dir(tl_interface):
             #     if "Bool" in name or "bool" in name:
             #         self.get_logger().info(name)
@@ -2509,7 +2865,7 @@ class TLArmNode(Node):
             response.message = f"call failed: {e}"
 
         return response
-    
+
     def handle_get_joint_temperature_service(self, request, response):
 
         try:
@@ -2569,7 +2925,7 @@ class TLArmNode(Node):
             response.message = f"call failed: {e}"
 
         return response
-    
+
     def handle_get_motor_current_service(self, request, response):
 
         try:
@@ -2646,7 +3002,9 @@ class TLArmNode(Node):
 
             joint_speed = tl_interface.VectorDouble()
             joint_speed_sync = tl_interface.VectorDouble()
-            ret, line_speed = tl_interface.get_current_line_speed_and_joint_speed(self.fd, 0.0, joint_speed, joint_speed_sync)
+            ret, line_speed = tl_interface.get_current_line_speed_and_joint_speed(
+                self.fd, 0.0, joint_speed, joint_speed_sync
+            )
             self.get_logger().info(f"get_current_line_speed_and_joint_speed ret={ret}")
 
             if ret == 0:
@@ -2686,12 +3044,14 @@ class TLArmNode(Node):
                     self.get_logger().info(name)
 
             version_string = ""
-            ret = tl_interface.query_joint_software_version(self.fd, request.axis_num, version_string)
+            ret = tl_interface.query_joint_software_version(
+                self.fd, request.axis_num, version_string
+            )
             self.get_logger().info(f"query_joint_software_version ret={ret}")
 
             if ret == 0:
                 # VectorChar -> string
-                version_str = ''.join([chr(c) for c in version_string]).rstrip('\x00')
+                version_str = "".join([chr(c) for c in version_string]).rstrip("\x00")
                 response.success = True
                 response.message = version_str
 
@@ -2705,7 +3065,7 @@ class TLArmNode(Node):
             response.message = f"call failed: {e}"
 
         return response
-    
+
     def handle_get_nexmotion_lib_version_service(self, request, response):
 
         try:
@@ -2736,7 +3096,7 @@ class TLArmNode(Node):
             response.message = f"call failed: {e}"
 
         return response
-    
+
     def handle_restore_default_dh_param_service(self, request, response):
 
         try:
@@ -2746,7 +3106,7 @@ class TLArmNode(Node):
                 return response
 
             ret = tl_interface.restore_default_param_DH(self.fd, request.robot_num)
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
                 response.message = "Restore default DH param successfully"
             else:
@@ -2759,7 +3119,7 @@ class TLArmNode(Node):
             response.message = f"call failed: {e}"
 
         return response
-    
+
     def handle_set_default_cartesian_param_service(self, request, response):
 
         try:
@@ -2771,7 +3131,7 @@ class TLArmNode(Node):
 
             ret = tl_interface.set_default_cartesian_params(self.fd)
 
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Set default cartesian param successfully"
@@ -2785,7 +3145,7 @@ class TLArmNode(Node):
             response.message = f"call failed: {e}"
 
         return response
-    
+
     def handle_log_download_service(self, request, response):
 
         try:
@@ -2794,9 +3154,11 @@ class TLArmNode(Node):
                 response.message = "Arm is not connected"
                 return response
 
-            ret = tl_interface.log_download_by_quantity(self.fd, request.count, request.directory_path)
+            ret = tl_interface.log_download_by_quantity(
+                self.fd, request.count, request.directory_path
+            )
 
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Log download successfully"
@@ -2846,7 +3208,7 @@ class TLArmNode(Node):
             # 调用底层接口
             ret = tl_interface.set_tool_hand_param(self.fd, request.tool_num, param)
             self.get_logger().info(f"set_tool_hand_param ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Set tool hand param successfully"
@@ -2857,7 +3219,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_set_tool_param_service failed: {e}')
+            self.get_logger().error(f"handle_set_tool_param_service failed: {e}")
 
         return response
 
@@ -2875,13 +3237,11 @@ class TLArmNode(Node):
                 request.pos.position.z,
                 request.pos.rpy.x,
                 request.pos.rpy.y,
-                request.pos.rpy.z
+                request.pos.rpy.z,
             ]
 
             self.get_logger().info(
-                f"set_user_coordinate_data "
-                f"user_num={request.user_num}, "
-                f"pos={pos_list}"
+                f"set_user_coordinate_data " f"user_num={request.user_num}, " f"pos={pos_list}"
             )
 
             # 转换为 SWIG VectorDouble
@@ -2892,7 +3252,7 @@ class TLArmNode(Node):
             # 调用底层接口
             ret = tl_interface.set_user_coordinate_data(self.fd, request.user_num, pos)
             self.get_logger().info(f"set_user_coordinate_data ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
 
             if response.success:
                 response.message = "Set user coordinate successfully"
@@ -2903,7 +3263,7 @@ class TLArmNode(Node):
             response.success = False
             response.message = str(e)
 
-            self.get_logger().error(f'handle_set_user_coord_service failed: {e}')
+            self.get_logger().error(f"handle_set_user_coord_service failed: {e}")
 
         return response
 
@@ -2918,7 +3278,7 @@ class TLArmNode(Node):
 
             self.get_logger().info(f"set_axis_zero_position ret={ret}, axis={request.axis}")
 
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
                 "Set axis zero position successfully"
                 if response.success
@@ -2926,7 +3286,7 @@ class TLArmNode(Node):
             )
 
         except Exception as e:
-            self.get_logger().error(f'handle_set_axis_zero_pos_service failed: {e}')
+            self.get_logger().error(f"handle_set_axis_zero_pos_service failed: {e}")
             response.success = False
             response.message = str(e)
 
@@ -2943,7 +3303,7 @@ class TLArmNode(Node):
 
             self.get_logger().info(f"set_current_coord ret={ret}, coord={request.coord}")
 
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
                 "Set current coordinate successfully"
                 if response.success
@@ -2951,7 +3311,7 @@ class TLArmNode(Node):
             )
 
         except Exception as e:
-            self.get_logger().error(f'handle_set_current_coord_service failed: {e}')
+            self.get_logger().error(f"handle_set_current_coord_service failed: {e}")
             response.success = False
             response.message = str(e)
 
@@ -2965,23 +3325,23 @@ class TLArmNode(Node):
             return response
         try:
             # self.get_logger().info(tl_interface.get_tool_hand_number.__doc__)
-            ret,tool_num = tl_interface.get_tool_hand_number(self.fd, -1)
-            ret1,user_num = tl_interface.get_user_coord_number(self.fd, -1)
+            ret, tool_num = tl_interface.get_tool_hand_number(self.fd, -1)
+            ret1, user_num = tl_interface.get_user_coord_number(self.fd, -1)
             # self.get_logger().info(f"get_tool_hand_number return: ret={ret}, tool_num={tool_num}")
-            # self.get_logger().info(f"get_user_coord_number return: ret={ret1}, user_num={user_num}")    
+            # self.get_logger().info(f"get_user_coord_number return: ret={ret1}, user_num={user_num}")
             if ret == 0 and ret1 == 0:
                 response.success = True
-                response.message = ("Get all coordinate number successfully")
+                response.message = "Get all coordinate number successfully"
                 response.tool_num = tool_num
                 response.user_num = user_num
             else:
                 response.success = False
-                response.message = ("Failed to get all coordinate number")
+                response.message = "Failed to get all coordinate number"
 
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_get_coord_num_service failed: {e}')
+            self.get_logger().error(f"handle_get_coord_num_service failed: {e}")
 
         return response
 
@@ -3001,9 +3361,11 @@ class TLArmNode(Node):
         try:
             ret = tl_interface.set_digital_output(self.fd, request.port, request.value)
 
-            self.get_logger().info(f"set_digital_output ret={ret}, " f"port={request.port}, value={request.value}")
+            self.get_logger().info(
+                f"set_digital_output ret={ret}, " f"port={request.port}, value={request.value}"
+            )
 
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
                 "Set digital output successfully"
                 if response.success
@@ -3011,7 +3373,7 @@ class TLArmNode(Node):
             )
 
         except Exception as e:
-            self.get_logger().error(f'handle_set_digital_output_service failed: {e}')
+            self.get_logger().error(f"handle_set_digital_output_service failed: {e}")
             response.success = False
             response.message = str(e)
 
@@ -3019,9 +3381,9 @@ class TLArmNode(Node):
 
     def handle_get_digital_input_output_service(self, request, response):
         if self.fd is None:
-                response.success = False
-                response.message = "Arm is not connected"
-                return response
+            response.success = False
+            response.message = "Arm is not connected"
+            return response
 
         try:
 
@@ -3032,14 +3394,14 @@ class TLArmNode(Node):
             ret1 = tl_interface.get_digital_output(self.fd, digital_output)
             if ret == 0 and ret1 == 0:
                 response.success = True
-                response.message = ("Get digital input output successfully")
+                response.message = "Get digital input output successfully"
 
                 # ROS2 sequence<int32>
                 response.input = [int(v) for v in digital_input]
                 response.output = [int(v) for v in digital_output]
             else:
                 response.success = False
-                response.message = ("Failed to get digital input and output")
+                response.message = "Failed to get digital input and output"
 
         except Exception as e:
             response.success = False
@@ -3098,13 +3460,13 @@ class TLArmNode(Node):
             for v in request.data:
                 data.append(int(v))
 
-            ret = tl_interface.modbus_write_multiple_holding_registers(self.fd, request.master_id, request.addr, data)
+            ret = tl_interface.modbus_write_multiple_holding_registers(
+                self.fd, request.master_id, request.addr, data
+            )
             self.get_logger().info(f"modbus_write ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
             response.message = (
-                "Modbus write successfully"
-                if response.success
-                else "Failed to write Modbus"
+                "Modbus write successfully" if response.success else "Failed to write Modbus"
             )
 
             return response
@@ -3129,21 +3491,20 @@ class TLArmNode(Node):
 
             # TCP
             if master_param.type == "TCP":
-                master_param.TCP.IP = (request.master_param.tcp.ip)
-                master_param.TCP.port = (request.master_param.tcp.port)
+                master_param.TCP.IP = request.master_param.tcp.ip
+                master_param.TCP.port = request.master_param.tcp.port
             # RTU
             elif master_param.type == "RTU":
-                master_param.RTU.slaveId = (request.master_param.rtu.slave_id)
-                master_param.RTU.port = (request.master_param.rtu.port)
-                master_param.RTU.baudrate = (request.master_param.rtu.baudrate)
-                master_param.RTU.checkBit = (request.master_param.rtu.check_bit)
-                master_param.RTU.dataBit = (request.master_param.rtu.data_bit)
-                master_param.RTU.stopBit = (request.master_param.rtu.stop_bit)
+                master_param.RTU.slaveId = request.master_param.rtu.slave_id
+                master_param.RTU.port = request.master_param.rtu.port
+                master_param.RTU.baudrate = request.master_param.rtu.baudrate
+                master_param.RTU.checkBit = request.master_param.rtu.check_bit
+                master_param.RTU.dataBit = request.master_param.rtu.data_bit
+                master_param.RTU.stopBit = request.master_param.rtu.stop_bit
             else:
                 response.success = False
                 response.message = "Invalid master type"
                 return response
-
 
             # set master parameter
             ret = tl_interface.modbus_set_master_parameter(self.fd, request.master_id, master_param)
@@ -3151,7 +3512,7 @@ class TLArmNode(Node):
 
             if ret != 0:
                 response.success = False
-                response.message = ("Failed to set master parameter")
+                response.message = "Failed to set master parameter"
                 return response
 
             # open master
@@ -3160,28 +3521,27 @@ class TLArmNode(Node):
 
             if ret != 0:
                 response.success = False
-                response.message = ("Failed to open master")
+                response.message = "Failed to open master"
                 return response
 
             # read holding registers
             data = tl_interface.VectorInt()
-            ret = tl_interface.modbus_read_holding_registers(self.fd, request.master_id, request.addr, request.quantity, data)
+            ret = tl_interface.modbus_read_holding_registers(
+                self.fd, request.master_id, request.addr, request.quantity, data
+            )
 
             self.get_logger().info(f"modbus_read_holding_registers ret={ret}")
-            response.success = (ret == 0)
+            response.success = ret == 0
             if response.success:
-                response.message = ("Modbus read successfully")
-                response.data = [
-                    data[i]
-                    for i in range(data.size())
-                ]
+                response.message = "Modbus read successfully"
+                response.data = [data[i] for i in range(data.size())]
             else:
-                response.message = ("Failed to read Modbus")
+                response.message = "Failed to read Modbus"
 
         except Exception as e:
             response.success = False
             response.message = str(e)
-            self.get_logger().error(f'handle_modbus_read_service failed: {e}')
+            self.get_logger().error(f"handle_modbus_read_service failed: {e}")
         return response
 
     def publish_arm_state(self):
@@ -3189,13 +3549,13 @@ class TLArmNode(Node):
             return
         # Publish arm_status
         try:
-            if hasattr(self, 'running_status_pub'):
+            if hasattr(self, "running_status_pub"):
                 st = msgs.ArmStatus()
                 st.stamp = self.get_clock().now().to_msg()
                 st.run_state = "STOP"
                 try:
 
-                    if (tl_interface is not None and hasattr(tl_interface, 'get_robot_state')):
+                    if tl_interface is not None and hasattr(tl_interface, "get_robot_state"):
 
                         ret = tl_interface.RobotState()
                         state = tl_interface.get_robot_state(self.fd, ret)
@@ -3207,25 +3567,25 @@ class TLArmNode(Node):
                         elif state == 2:
                             st.run_state = "RUNNING"
                 except Exception as e:
-                    self.get_logger().warning(f'get_robot_state failed: {e}')
+                    self.get_logger().warning(f"get_robot_state failed: {e}")
 
                 self.running_status_pub.publish(st)
         except Exception as e:
-            self.get_logger().debug(f'publish arm_status failed: {e}')
+            self.get_logger().debug(f"publish arm_status failed: {e}")
 
         # Publish joint_state
         try:
             js = JointState()
             js.header.stamp = self.get_clock().now().to_msg()
-            joints = self.get_parameter('arm_joints').get_parameter_value().string_array_value
+            joints = self.get_parameter("arm_joints").get_parameter_value().string_array_value
             js.name = joints
 
             joint_pose = tl_interface.VectorDouble()
             pos_ok = False
-            if tl_interface is not None and hasattr(tl_interface, 'get_current_position'):
+            if tl_interface is not None and hasattr(tl_interface, "get_current_position"):
                 try:
                     ret = tl_interface.get_current_position(self.fd, 0, joint_pose)
-                    if hasattr(joint_pose, '__len__') and len(joint_pose) >= 6 and ret == 0:
+                    if hasattr(joint_pose, "__len__") and len(joint_pose) >= 6 and ret == 0:
                         # 角度转弧度
                         # self.get_logger().info(f"joint_angle(deg) = {list(joint_pose)}") # 示教器上是角度，ROS里通常用弧度
                         deg_to_rad = math.pi / 180.0
@@ -3238,7 +3598,7 @@ class TLArmNode(Node):
                         js.position = pos
                         pos_ok = True
                 except Exception as e:
-                    self.get_logger().error(f'get_current_position failed: {e}')
+                    self.get_logger().error(f"get_current_position failed: {e}")
             if not pos_ok:
                 js.position = [0.0] * len(joints)
 
@@ -3246,18 +3606,18 @@ class TLArmNode(Node):
             js.effort = []
             self.joint_state_pub.publish(js)
         except Exception as e:
-            self.get_logger().debug(f'publish joint_state failed: {e}')
-        
+            self.get_logger().debug(f"publish joint_state failed: {e}")
+
         # pulish tcp_pose
         try:
 
-            if hasattr(self, 'tcp_pose_pub') and self.tcp_pose_pub is not None:
+            if hasattr(self, "tcp_pose_pub") and self.tcp_pose_pub is not None:
 
                 msg = msgs.CartesianPose()
                 msg.header.stamp = self.get_clock().now().to_msg()
                 msg.header.frame_id = "base_link"
                 pose_ok = False
-                if (tl_interface is not None and hasattr(tl_interface, 'get_current_position')):
+                if tl_interface is not None and hasattr(tl_interface, "get_current_position"):
                     try:
 
                         cartesian_pose = tl_interface.VectorDouble()
@@ -3280,7 +3640,11 @@ class TLArmNode(Node):
                             msg.rpy.y = cartesian_pose[4]
                             msg.rpy.z = cartesian_pose[5]
                             # arm angle
-                            ndof = len(self.get_parameter('arm_joints').get_parameter_value().string_array_value)
+                            ndof = len(
+                                self.get_parameter("arm_joints")
+                                .get_parameter_value()
+                                .string_array_value
+                            )
                             if ndof == 6:
                                 msg.arm_angle = 0.0
 
@@ -3291,10 +3655,11 @@ class TLArmNode(Node):
 
                     except Exception as e:
 
-                        self.get_logger().error(f'get_current_position tcp failed: {e}')
+                        self.get_logger().error(f"get_current_position tcp failed: {e}")
             self.tcp_pose_pub.publish(msg)
         except Exception as e:
-            self.get_logger().error(f'publish tcp_pose failed: {e}')
+            self.get_logger().error(f"publish tcp_pose failed: {e}")
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -3304,12 +3669,16 @@ def main(args=None):
     num_threads = max(4, cpu_threads)
     executor = rclpy.executors.MultiThreadedExecutor(num_threads=num_threads)
     executor.add_node(node)
-    node.get_logger().info(f'Starting MultiThreadedExecutor with {num_threads} threads (detected {cpu_threads} CPU threads, min 4)')
-    node.get_logger().info('Callback groups: service(MutuallyExclusive) + topic(MutuallyExclusive) + timer(Reentrant) = 3 logical lanes')
-    
+    node.get_logger().info(
+        f"Starting MultiThreadedExecutor with {num_threads} threads (detected {cpu_threads} CPU threads, min 4)"
+    )
+    node.get_logger().info(
+        "Callback groups: service(MutuallyExclusive) + topic(MutuallyExclusive) + timer(Reentrant) = 3 logical lanes"
+    )
+
     # flag to prevent re-entrance on double Ctrl+C
     _shutting_down = False
-    
+
     try:
         executor.spin()
     except KeyboardInterrupt:
@@ -3317,7 +3686,7 @@ def main(args=None):
             pass  # ignore second Ctrl+C
         else:
             _shutting_down = True
-            node.get_logger().info('[Shutdown]: Ctrl+C received, powering off...')
+            node.get_logger().info("[Shutdown]: Ctrl+C received, powering off...")
             try:
                 node.power_off()
             except Exception:
@@ -3349,5 +3718,5 @@ def main(args=None):
             pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

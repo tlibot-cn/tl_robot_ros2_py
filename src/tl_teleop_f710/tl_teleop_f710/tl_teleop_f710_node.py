@@ -42,7 +42,7 @@ class F710TeleopNode(Node):
     """F710 手柄遥操作 ROS2 节点。"""
 
     def __init__(self):
-        super().__init__('tl_teleop_f710_node')
+        super().__init__("tl_teleop_f710_node")
 
         # ==================== 声明参数 ====================
         self._declare_parameters()
@@ -51,35 +51,30 @@ class F710TeleopNode(Node):
         self._load_parameters()
 
         # ==================== 内部状态 ====================
-        self._latest_joy = None          # 最新摇杆数据
-        self._joy_lock = False           # 简单锁标志
-        self._last_dpad_time = 0.0       # 十字键上次触发时间
-        self._last_a_press = 0.0         # A 键上次按下时间
-        self._last_b_press = 0.0         # B 键上次按下时间
+        self._latest_joy = None  # 最新摇杆数据
+        self._joy_lock = False  # 简单锁标志
+        self._last_dpad_time = 0.0  # 十字键上次触发时间
+        self._last_a_press = 0.0  # A 键上次按下时间
+        self._last_b_press = 0.0  # B 键上次按下时间
         self.speed_value_ = self.speed_default_  # 当前运动速度 0-100
         self.target_pose_ = None  # [x, y, z, rx, ry, rz] — 由 FK 初始化，就绪前不发布
 
         # ==================== 订阅 ====================
-        self.joy_sub_ = self.create_subscription(
-            Joy, '/joy', self._joy_callback, 10)
+        self.joy_sub_ = self.create_subscription(Joy, "/joy", self._joy_callback, 10)
 
         # ==================== 发布 ====================
-        self.servol_pub_ = self.create_publisher(
-            ServolMove, '/tl_driver/set_servol_pos', 10)
+        self.servol_pub_ = self.create_publisher(ServolMove, "/tl_driver/set_servol_pos", 10)
 
         # ==================== 服务客户端（ServoJ 初始化）====================
-        self._set_mode_client = self.create_client(
-            SetCurrentMode, '/tl_driver/set_current_mode')
-        self._set_speed_client = self.create_client(
-            SetSpeed, '/tl_driver/set_speed')
-        self._open_servoj_client = self.create_client(
-            OpenServoJ, '/tl_driver/open_servoj')
-        self._close_servoj_client = self.create_client(
-            Trigger, '/tl_driver/close_servoj')
+        self._set_mode_client = self.create_client(SetCurrentMode, "/tl_driver/set_current_mode")
+        self._set_speed_client = self.create_client(SetSpeed, "/tl_driver/set_speed")
+        self._open_servoj_client = self.create_client(OpenServoJ, "/tl_driver/open_servoj")
+        self._close_servoj_client = self.create_client(Trigger, "/tl_driver/close_servoj")
         self._coord_transform_client = self.create_client(
-            CoordTransform, '/tl_driver/coord_transform')
-        self._init_state = 0        # ServoJ 初始化状态机：0=等待服务 1~3=进行中 4=完成
-        self._init_future = None    # 当前异步服务调用的 future
+            CoordTransform, "/tl_driver/coord_transform"
+        )
+        self._init_state = 0  # ServoJ 初始化状态机：0=等待服务 1~3=进行中 4=完成
+        self._init_future = None  # 当前异步服务调用的 future
 
         # ==================== FK（关节→笛卡尔）初始化 ====================
         self._fk_ready = False
@@ -92,99 +87,99 @@ class F710TeleopNode(Node):
             init_pose = self._home_joints_to_pose()
             if init_pose is not None:
                 self.target_pose_ = list(init_pose)
-                self.get_logger().info(
-                    f'初始位姿（FK）: {[f"{v:.1f}" for v in self.target_pose_]}')
+                self.get_logger().info(f'初始位姿（FK）: {[f"{v:.1f}" for v in self.target_pose_]}')
 
         # ==================== ServoJ 初始化定时器 ====================
         self.create_timer(1.0, self._init_servoj)
-        self.get_logger().info('ServoJ 初始化定时器已启动（1 秒后检查服务）')
+        self.get_logger().info("ServoJ 初始化定时器已启动（1 秒后检查服务）")
 
         # ==================== 控制定时器 ====================
         period = 1.0 / self.control_rate_
         self.control_timer_ = self.create_timer(period, self._control_loop)
 
         self.get_logger().info(
-            f'F710 遥操作节点已启动 ({self.control_rate_}Hz, '
-            f'灵敏度 {self.pos_sensitivity_}mm/s)')
+            f"F710 遥操作节点已启动 ({self.control_rate_}Hz, "
+            f"灵敏度 {self.pos_sensitivity_}mm/s)"
+        )
 
     # ==================== 参数系统 ====================
 
     def _declare_parameters(self):
         """声明所有 ROS2 参数（与 YAML 配置文件对应）。"""
         # 控制频率
-        self.declare_parameter('control_rate', 20.0)
+        self.declare_parameter("control_rate", 20.0)
         # 仿真模式（true=跳过 servoj 初始化，用于 Gazebo 仿真）
-        self.declare_parameter('simulation_mode', False)
+        self.declare_parameter("simulation_mode", False)
         # 运动速度（0-100，对应机械臂实际速度范围）
-        self.declare_parameter('speed_default', 50.0)
-        self.declare_parameter('speed_min', 5.0)
-        self.declare_parameter('speed_max', 100.0)
-        self.declare_parameter('speed_step', 5.0)
+        self.declare_parameter("speed_default", 50.0)
+        self.declare_parameter("speed_min", 5.0)
+        self.declare_parameter("speed_max", 100.0)
+        self.declare_parameter("speed_step", 5.0)
         # ServoJ 初始化参数
-        self.declare_parameter('servo_speed', 25.0)
-        self.declare_parameter('servo_vmax', 80.0)
-        self.declare_parameter('servo_amax', 3000.0)
-        self.declare_parameter('servo_jmax', 50000.0)
+        self.declare_parameter("servo_speed", 25.0)
+        self.declare_parameter("servo_vmax", 80.0)
+        self.declare_parameter("servo_amax", 3000.0)
+        self.declare_parameter("servo_jmax", 50000.0)
         # 运动灵敏度
-        self.declare_parameter('pos_sensitivity', 50.0)
-        self.declare_parameter('rot_sensitivity', 1.0)
-        self.declare_parameter('step_size', 2.0)
+        self.declare_parameter("pos_sensitivity", 50.0)
+        self.declare_parameter("rot_sensitivity", 1.0)
+        self.declare_parameter("step_size", 2.0)
         # 摇杆死区
-        self.declare_parameter('deadzone', 0.15)
+        self.declare_parameter("deadzone", 0.15)
         # 机械臂型号（仿真模式 FK 用）
-        self.declare_parameter('arm_type', 'tcb605')
+        self.declare_parameter("arm_type", "tcb605")
         # 回零关节角度（度）
-        self.declare_parameter('home_joints', [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.declare_parameter("home_joints", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         # 轴映射（DirectInput 模式）
-        self.declare_parameter('axis_left_x', 0)
-        self.declare_parameter('axis_left_y', 1)
-        self.declare_parameter('axis_right_x', 3)
-        self.declare_parameter('axis_right_y', 4)
-        self.declare_parameter('axis_dpad_x', 6)
-        self.declare_parameter('axis_dpad_y', 7)
+        self.declare_parameter("axis_left_x", 0)
+        self.declare_parameter("axis_left_y", 1)
+        self.declare_parameter("axis_right_x", 3)
+        self.declare_parameter("axis_right_y", 4)
+        self.declare_parameter("axis_dpad_x", 6)
+        self.declare_parameter("axis_dpad_y", 7)
         # 按键映射
-        self.declare_parameter('btn_x', 0)
-        self.declare_parameter('btn_a', 1)
-        self.declare_parameter('btn_b', 2)
-        self.declare_parameter('btn_y', 3)
-        self.declare_parameter('btn_lb', 4)
-        self.declare_parameter('btn_rb', 5)
-        self.declare_parameter('btn_lt', 6)
-        self.declare_parameter('btn_rt', 7)
-        self.declare_parameter('btn_back', 8)
-        self.declare_parameter('btn_start', 9)
+        self.declare_parameter("btn_x", 0)
+        self.declare_parameter("btn_a", 1)
+        self.declare_parameter("btn_b", 2)
+        self.declare_parameter("btn_y", 3)
+        self.declare_parameter("btn_lb", 4)
+        self.declare_parameter("btn_rb", 5)
+        self.declare_parameter("btn_lt", 6)
+        self.declare_parameter("btn_rt", 7)
+        self.declare_parameter("btn_back", 8)
+        self.declare_parameter("btn_start", 9)
 
     def _load_parameters(self):
         """将参数值读取到实例变量。"""
-        self.control_rate_ = self.get_parameter('control_rate').value
-        self.simulation_mode_ = self.get_parameter('simulation_mode').value
-        self.speed_default_ = self.get_parameter('speed_default').value
-        self.speed_min_ = self.get_parameter('speed_min').value
-        self.speed_max_ = self.get_parameter('speed_max').value
-        self.speed_step_ = self.get_parameter('speed_step').value
+        self.control_rate_ = self.get_parameter("control_rate").value
+        self.simulation_mode_ = self.get_parameter("simulation_mode").value
+        self.speed_default_ = self.get_parameter("speed_default").value
+        self.speed_min_ = self.get_parameter("speed_min").value
+        self.speed_max_ = self.get_parameter("speed_max").value
+        self.speed_step_ = self.get_parameter("speed_step").value
         # ServoJ 初始化参数
-        self.servo_speed_ = self.get_parameter('servo_speed').value
-        self.servo_vmax_ = self.get_parameter('servo_vmax').value
-        self.servo_amax_ = self.get_parameter('servo_amax').value
-        self.servo_jmax_ = self.get_parameter('servo_jmax').value
-        self.pos_sensitivity_ = self.get_parameter('pos_sensitivity').value
-        self.rot_sensitivity_ = self.get_parameter('rot_sensitivity').value
-        self.step_size_ = self.get_parameter('step_size').value
-        self.deadzone_ = self.get_parameter('deadzone').value
-        self.home_joints_ = list(self.get_parameter('home_joints').value)
-        self.arm_type_ = self.get_parameter('arm_type').value
+        self.servo_speed_ = self.get_parameter("servo_speed").value
+        self.servo_vmax_ = self.get_parameter("servo_vmax").value
+        self.servo_amax_ = self.get_parameter("servo_amax").value
+        self.servo_jmax_ = self.get_parameter("servo_jmax").value
+        self.pos_sensitivity_ = self.get_parameter("pos_sensitivity").value
+        self.rot_sensitivity_ = self.get_parameter("rot_sensitivity").value
+        self.step_size_ = self.get_parameter("step_size").value
+        self.deadzone_ = self.get_parameter("deadzone").value
+        self.home_joints_ = list(self.get_parameter("home_joints").value)
+        self.arm_type_ = self.get_parameter("arm_type").value
 
-        self.axis_left_x_ = int(self.get_parameter('axis_left_x').value)
-        self.axis_left_y_ = int(self.get_parameter('axis_left_y').value)
-        self.axis_right_x_ = int(self.get_parameter('axis_right_x').value)
-        self.axis_right_y_ = int(self.get_parameter('axis_right_y').value)
-        self.axis_dpad_x_ = int(self.get_parameter('axis_dpad_x').value)
-        self.axis_dpad_y_ = int(self.get_parameter('axis_dpad_y').value)
+        self.axis_left_x_ = int(self.get_parameter("axis_left_x").value)
+        self.axis_left_y_ = int(self.get_parameter("axis_left_y").value)
+        self.axis_right_x_ = int(self.get_parameter("axis_right_x").value)
+        self.axis_right_y_ = int(self.get_parameter("axis_right_y").value)
+        self.axis_dpad_x_ = int(self.get_parameter("axis_dpad_x").value)
+        self.axis_dpad_y_ = int(self.get_parameter("axis_dpad_y").value)
 
-        self.btn_a_ = int(self.get_parameter('btn_a').value)
-        self.btn_b_ = int(self.get_parameter('btn_b').value)
-        self.btn_lb_ = int(self.get_parameter('btn_lb').value)
-        self.btn_rb_ = int(self.get_parameter('btn_rb').value)
+        self.btn_a_ = int(self.get_parameter("btn_a").value)
+        self.btn_b_ = int(self.get_parameter("btn_b").value)
+        self.btn_lb_ = int(self.get_parameter("btn_lb").value)
+        self.btn_rb_ = int(self.get_parameter("btn_rb").value)
 
     # ==================== 工具函数 ====================
 
@@ -221,14 +216,15 @@ class F710TeleopNode(Node):
         arm_type = self.arm_type_
         try:
             import pinocchio
+
             urdf_paths = [
-                os.path.expanduser(
-                    f'~/tl_robot_ros2_py/src/tl_description/urdf/{arm_type}.urdf'),
+                os.path.expanduser(f"~/tl_robot_ros2_py/src/tl_description/urdf/{arm_type}.urdf"),
             ]
             try:
                 from ament_index_python.packages import get_package_share_directory
-                pkg = get_package_share_directory('tl_description')
-                urdf_paths.insert(0, os.path.join(pkg, 'urdf', f'{arm_type}.urdf'))
+
+                pkg = get_package_share_directory("tl_description")
+                urdf_paths.insert(0, os.path.join(pkg, "urdf", f"{arm_type}.urdf"))
             except Exception:
                 pass
             for path in urdf_paths:
@@ -236,16 +232,16 @@ class F710TeleopNode(Node):
                     self._fk_model = pinocchio.buildModelFromUrdf(path)
                     break
             if self._fk_model is None:
-                self.get_logger().warning('FK 模型加载失败，回零不可用')
+                self.get_logger().warning("FK 模型加载失败，回零不可用")
                 return
             self._fk_data = self._fk_model.createData()
             ndof = self._fk_model.nq
-            tip_frame = f'link{ndof}'
+            tip_frame = f"link{ndof}"
             self._fk_tip_frame = self._fk_model.getFrameId(tip_frame)
             self._fk_ready = True
-            self.get_logger().info(f'FK（Pinocchio）就绪: {ndof} 轴, tip_frame={tip_frame}')
+            self.get_logger().info(f"FK（Pinocchio）就绪: {ndof} 轴, tip_frame={tip_frame}")
         except Exception as e:
-            self.get_logger().warning(f'FK 初始化失败: {e}')
+            self.get_logger().warning(f"FK 初始化失败: {e}")
 
     def _home_joints_to_pose(self):
         """将 home_joints（度）转为笛卡尔位姿 [x, y, z, rx, ry, rz]。
@@ -259,11 +255,11 @@ class F710TeleopNode(Node):
         if not self.simulation_mode_:
             # ========== 真机模式：调用 coord_transform 服务 ==========
             if not self._coord_transform_client.wait_for_service(timeout_sec=2.0):
-                self.get_logger().error('coord_transform 服务不可用，回零失败')
+                self.get_logger().error("coord_transform 服务不可用，回零失败")
                 return None
             req = CoordTransform.Request()
-            req.origin_coord = 0       # 关节坐标系（输入）
-            req.target_coord = 1       # 直角坐标系（输出）
+            req.origin_coord = 0  # 关节坐标系（输入）
+            req.target_coord = 1  # 直角坐标系（输出）
             req.form = 0
             # joint angles in degrees, pad to 7
             pos = list(joints_deg) + [0.0] * (7 - ndof)
@@ -273,16 +269,17 @@ class F710TeleopNode(Node):
                 ret = self._coord_transform_client.call(req)
                 if ret.success and len(ret.target_pos) >= 6:
                     return list(ret.target_pos[:6])  # [x, y, z, rx, ry, rz]
-                self.get_logger().error(f'FK 服务失败: {ret.message}')
+                self.get_logger().error(f"FK 服务失败: {ret.message}")
             except Exception as e:
-                self.get_logger().error(f'FK 调用异常: {e}')
+                self.get_logger().error(f"FK 调用异常: {e}")
             return None
         else:
             # ========== 仿真模式：Pinocchio 本地 FK ==========
             if not self._fk_ready:
-                self.get_logger().error('FK 未就绪，回零失败')
+                self.get_logger().error("FK 未就绪，回零失败")
                 return None
             import pinocchio
+
             # 度 → 弧度
             q = np.array([math.radians(v) for v in joints_deg], dtype=np.float64)
             pinocchio.forwardKinematics(self._fk_model, self._fk_data, q)
@@ -319,14 +316,13 @@ class F710TeleopNode(Node):
         # ---- 状态 0：等待所有服务就绪 ----
         if state == 0:
             if not self._set_mode_client.wait_for_service(timeout_sec=0.1):
-                self.get_logger().info(
-                    '等待 tl_driver 服务就绪...', throttle_duration_sec=3.0)
+                self.get_logger().info("等待 tl_driver 服务就绪...", throttle_duration_sec=3.0)
                 return
             if not self._set_speed_client.wait_for_service(timeout_sec=0.1):
                 return
             if not self._open_servoj_client.wait_for_service(timeout_sec=0.1):
                 return
-            self.get_logger().info('ServoJ 初始化中...')
+            self.get_logger().info("ServoJ 初始化中...")
             # 发送 set_mode 请求
             req = SetCurrentMode.Request()
             req.mode = 2
@@ -339,11 +335,10 @@ class F710TeleopNode(Node):
             if not self._init_future.done():
                 return  # 下次 tick 再检查
             if not self._init_future.result().success:
-                self.get_logger().error(
-                    f'设置远程模式失败: {self._init_future.result().message}')
+                self.get_logger().error(f"设置远程模式失败: {self._init_future.result().message}")
                 self._init_state = 4  # 标记完成防止重复报错
                 return
-            self.get_logger().info('ServoJ 模式已设为远程(2)')
+            self.get_logger().info("ServoJ 模式已设为远程(2)")
             # 发送 set_speed 请求
             req_s = SetSpeed.Request()
             req_s.speed = self.servo_speed_
@@ -357,10 +352,11 @@ class F710TeleopNode(Node):
                 return
             if not self._init_future.result().success:
                 self.get_logger().error(
-                    f'设置 ServoJ 速度失败: {self._init_future.result().message}')
+                    f"设置 ServoJ 速度失败: {self._init_future.result().message}"
+                )
                 self._init_state = 4
                 return
-            self.get_logger().info(f'ServoJ 速度已设为 {self.servo_speed_}')
+            self.get_logger().info(f"ServoJ 速度已设为 {self.servo_speed_}")
             # 发送 open_servoj 请求
             req_o = OpenServoJ.Request()
             req_o.vmax = [self.servo_vmax_] * 7
@@ -375,12 +371,11 @@ class F710TeleopNode(Node):
             if not self._init_future.done():
                 return
             if not self._init_future.result().success:
-                self.get_logger().error(
-                    f'开启 ServoJ 失败: {self._init_future.result().message}')
+                self.get_logger().error(f"开启 ServoJ 失败: {self._init_future.result().message}")
                 self._init_state = 4
                 self._after_init()
                 return
-            self.get_logger().info('ServoJ 已开启，遥操作就绪 ✅')
+            self.get_logger().info("ServoJ 已开启，遥操作就绪 ✅")
             self._init_state = 4
             self._after_init()
             return
@@ -396,8 +391,7 @@ class F710TeleopNode(Node):
         init_pose = self._home_joints_to_pose()
         if init_pose is not None:
             self.target_pose_ = list(init_pose)
-            self.get_logger().info(
-                f'初始位姿（FK）: {[f"{v:.1f}" for v in self.target_pose_]}')
+            self.get_logger().info(f'初始位姿（FK）: {[f"{v:.1f}" for v in self.target_pose_]}')
 
     def _close_servoj(self):
         """关闭 ServoJ 模式（非阻塞，发请求不等回复）。"""
@@ -405,9 +399,9 @@ class F710TeleopNode(Node):
             return
         try:
             self._close_servoj_client.call_async(Trigger.Request())
-            self.get_logger().info('ServoJ 已关闭')
+            self.get_logger().info("ServoJ 已关闭")
         except Exception as e:
-            self.get_logger().error(f'关闭 ServoJ 异常: {e}')
+            self.get_logger().error(f"关闭 ServoJ 异常: {e}")
 
     # ==================== 话题回调 ====================
 
@@ -427,18 +421,19 @@ class F710TeleopNode(Node):
         now = time.time()
 
         # 校验数据完整性：检查实际存在的轴数和键数
-        needed_axes = max(self.axis_left_x_, self.axis_left_y_,
-                          self.axis_right_x_, self.axis_right_y_)
+        needed_axes = max(
+            self.axis_left_x_, self.axis_left_y_, self.axis_right_x_, self.axis_right_y_
+        )
         needed_btns = max(self.btn_a_, self.btn_b_, self.btn_lb_, self.btn_rb_)
         if len(joy.axes) <= needed_axes or len(joy.buttons) <= needed_btns:
             self.get_logger().warning(
-                f'摇杆数据异常: axes={len(joy.axes)}, buttons={len(joy.buttons)}',
-                throttle_duration_sec=5.0)
+                f"摇杆数据异常: axes={len(joy.axes)}, buttons={len(joy.buttons)}",
+                throttle_duration_sec=5.0,
+            )
             return
 
         # 十字键可能因手柄型号不同而缺失，安全读取
-        dpad_y = (joy.axes[self.axis_dpad_y_]
-                  if self.axis_dpad_y_ < len(joy.axes) else 0.0)
+        dpad_y = joy.axes[self.axis_dpad_y_] if self.axis_dpad_y_ < len(joy.axes) else 0.0
         has_dpad = self.axis_dpad_y_ < len(joy.axes)
 
         # ========== A 键：回零（防抖 500ms） ==========
@@ -449,25 +444,23 @@ class F710TeleopNode(Node):
                 self.target_pose_ = list(pose)
                 self.speed_value_ = self.speed_default_
                 self._publish_servol()
-                self.get_logger().info(f'回零 → {pose}')
+                self.get_logger().info(f"回零 → {pose}")
             return
 
         # ========== B 键：停止（防抖 500ms） ==========
         if joy.buttons[self.btn_b_] == 1 and (now - self._last_b_press) > 0.5:
             self._last_b_press = now
-            self.get_logger().info('停止运动')
+            self.get_logger().info("停止运动")
             return  # 不发布任何新目标，让当前运动自然结束
 
         # ========== 速度调节（十字键上下，防抖 300ms，范围 0-100）==========
         if has_dpad and dpad_y != 0.0 and (now - self._last_dpad_time) > 0.3:
             if dpad_y > 0.0:  # 上（部分手柄十字键上为正）
-                self.speed_value_ = min(self.speed_max_,
-                                        self.speed_value_ + self.speed_step_)
+                self.speed_value_ = min(self.speed_max_, self.speed_value_ + self.speed_step_)
             else:  # 下
-                self.speed_value_ = max(self.speed_min_,
-                                        self.speed_value_ - self.speed_step_)
+                self.speed_value_ = max(self.speed_min_, self.speed_value_ - self.speed_step_)
             self._last_dpad_time = now
-            self.get_logger().info(f'速度: {self.speed_value_:.0f}')
+            self.get_logger().info(f"速度: {self.speed_value_:.0f}")
 
         # ========== 读取摇杆（带死区） ==========
         lx = self._apply_deadzone(joy.axes[self.axis_left_x_], self.deadzone_)
@@ -531,12 +524,12 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info('用户中断，退出')
+        node.get_logger().info("用户中断，退出")
     finally:
         node._close_servoj()
         node.destroy_node()
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

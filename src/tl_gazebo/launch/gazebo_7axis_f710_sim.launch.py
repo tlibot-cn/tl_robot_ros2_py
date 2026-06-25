@@ -16,47 +16,52 @@ from launch_ros.actions import Node
 from launch.event_handlers import OnProcessExit
 from ament_index_python.packages import get_package_share_directory
 
+
 def _launch_actions(context, *args, **kwargs):
     """在运行时解析 arm_type 并生成实际的启动动作。"""
-    arm_type_str = LaunchConfiguration('arm_type').perform(context)
-    package_name = 'tl_gazebo'
+    arm_type_str = LaunchConfiguration("arm_type").perform(context)
+    package_name = "tl_gazebo"
 
-    tl_description_share = get_package_share_directory('tl_description')
-    gazebo_model_root = os.path.expanduser('~/.gazebo/tl_robot_models')
-    gazebo_tl_description_model = os.path.join(gazebo_model_root, 'tl_description')
-    gazebo_tl_description_meshes = os.path.join(gazebo_tl_description_model, 'meshes')
+    tl_description_share = get_package_share_directory("tl_description")
+    gazebo_model_root = os.path.expanduser("~/.gazebo/tl_robot_models")
+    gazebo_tl_description_model = os.path.join(gazebo_model_root, "tl_description")
+    gazebo_tl_description_meshes = os.path.join(gazebo_tl_description_model, "meshes")
     os.makedirs(gazebo_tl_description_model, exist_ok=True)
-    real_meshes_dir = os.path.join(tl_description_share, 'meshes')
+    real_meshes_dir = os.path.join(tl_description_share, "meshes")
     if os.path.lexists(gazebo_tl_description_meshes):
         if os.path.islink(gazebo_tl_description_meshes):
             if os.path.realpath(gazebo_tl_description_meshes) != os.path.realpath(real_meshes_dir):
                 os.unlink(gazebo_tl_description_meshes)
         else:
-            raise RuntimeError(f'{gazebo_tl_description_meshes} already exists.')
+            raise RuntimeError(f"{gazebo_tl_description_meshes} already exists.")
     if not os.path.lexists(gazebo_tl_description_meshes):
         os.symlink(real_meshes_dir, gazebo_tl_description_meshes)
 
-    model_config_path = os.path.join(gazebo_tl_description_model, 'model.config')
-    dummy_sdf_path = os.path.join(gazebo_tl_description_model, 'dummy.sdf')
+    model_config_path = os.path.join(gazebo_tl_description_model, "model.config")
+    dummy_sdf_path = os.path.join(gazebo_tl_description_model, "dummy.sdf")
     if not os.path.exists(model_config_path):
-        with open(model_config_path, 'w') as f:
-            f.write('<?xml version="1.0"?><model><name>tl_description</name>'
-                    '<version>1.0</version><sdf version="1.6">dummy.sdf</sdf>'
-                    '<author><name>tl</name><email>none@example.com</email></author>'
-                    '<description>Mesh resource package for TL robot.</description></model>')
+        with open(model_config_path, "w") as f:
+            f.write(
+                '<?xml version="1.0"?><model><name>tl_description</name>'
+                '<version>1.0</version><sdf version="1.6">dummy.sdf</sdf>'
+                "<author><name>tl</name><email>none@example.com</email></author>"
+                "<description>Mesh resource package for TL robot.</description></model>"
+            )
     if not os.path.exists(dummy_sdf_path):
-        with open(dummy_sdf_path, 'w') as f:
-            f.write('<?xml version="1.0"?><sdf version="1.6">'
-                    '<model name="tl_description"><static>true</static>'
-                    '<link name="dummy_link"/></model></sdf>')
+        with open(dummy_sdf_path, "w") as f:
+            f.write(
+                '<?xml version="1.0"?><sdf version="1.6">'
+                '<model name="tl_description"><static>true</static>'
+                '<link name="dummy_link"/></model></sdf>'
+            )
 
     bad_model_path = os.path.dirname(tl_description_share)
-    existing = os.environ.get('GAZEBO_MODEL_PATH', '')
-    system_models = '/usr/share/gazebo-11/models'
+    existing = os.environ.get("GAZEBO_MODEL_PATH", "")
+    system_models = "/usr/share/gazebo-11/models"
     model_paths = [gazebo_model_root]
     if os.path.exists(system_models):
         model_paths.append(system_models)
-    for p in existing.split(':'):
+    for p in existing.split(":"):
         if not p:
             continue
         if os.path.realpath(p) == os.path.realpath(bad_model_path):
@@ -65,18 +70,22 @@ def _launch_actions(context, *args, **kwargs):
             model_paths.append(p)
 
     set_gazebo_model_path = SetEnvironmentVariable(
-        name='GAZEBO_MODEL_PATH', value=':'.join(model_paths))
+        name="GAZEBO_MODEL_PATH", value=":".join(model_paths)
+    )
     set_gazebo_model_database_uri = SetEnvironmentVariable(
-        name='GAZEBO_MODEL_DATABASE_URI', value='')
+        name="GAZEBO_MODEL_DATABASE_URI", value=""
+    )
 
     # ---- 构建 robot_description：读取 URDF + 附加 Gazebo 配置 ----
-    urdf_path = os.path.join(tl_description_share, 'urdf', f'{arm_type_str}.urdf')
-    with open(urdf_path, 'r') as f:
+    urdf_path = os.path.join(tl_description_share, "urdf", f"{arm_type_str}.urdf")
+    with open(urdf_path, "r") as f:
         urdf_content = f.read()
-    urdf_inner = urdf_content.split('<robot', 1)[1].split('>', 1)[1]
-    urdf_inner = urdf_inner.rsplit('</robot>', 1)[0]
-    controller_yaml = os.path.join(get_package_share_directory(package_name), 'config', 'ros2_controllers_f710_sim_7axis.yaml')
-    robot_description_xml = f'''<?xml version="1.0"?>
+    urdf_inner = urdf_content.split("<robot", 1)[1].split(">", 1)[1]
+    urdf_inner = urdf_inner.rsplit("</robot>", 1)[0]
+    controller_yaml = os.path.join(
+        get_package_share_directory(package_name), "config", "ros2_controllers_f710_sim_7axis.yaml"
+    )
+    robot_description_xml = f"""<?xml version="1.0"?>
 <robot name="tl_{arm_type_str}_f710_sim">
 {urdf_inner}
   <link name="world"/>
@@ -169,53 +178,93 @@ def _launch_actions(context, *args, **kwargs):
       <robot_param_node>robot_state_publisher</robot_param_node>
     </plugin>
   </gazebo>
-</robot>'''
-    params = {'robot_description': robot_description_xml}
+</robot>"""
+    params = {"robot_description": robot_description_xml}
 
     actions: List[SomeActionsType] = []
     actions.append(set_gazebo_model_database_uri)
     actions.append(set_gazebo_model_path)
 
-    gazebo_default_world = '/usr/share/gazebo-11/worlds/empty.world'
+    gazebo_default_world = "/usr/share/gazebo-11/worlds/empty.world"
     if not os.path.exists(gazebo_default_world):
-        raise RuntimeError(f'Gazebo default world not found: {gazebo_default_world}')
-    actions.append(ExecuteProcess(
-        cmd=['gazebo', '--verbose', gazebo_default_world,
-             '-s', 'libgazebo_ros_init.so', '-s', 'libgazebo_ros_factory.so'],
-        output='screen'))
+        raise RuntimeError(f"Gazebo default world not found: {gazebo_default_world}")
+    actions.append(
+        ExecuteProcess(
+            cmd=[
+                "gazebo",
+                "--verbose",
+                gazebo_default_world,
+                "-s",
+                "libgazebo_ros_init.so",
+                "-s",
+                "libgazebo_ros_factory.so",
+            ],
+            output="screen",
+        )
+    )
 
-    actions.append(Node(
-        package='robot_state_publisher', executable='robot_state_publisher',
-        parameters=[{'use_sim_time': True}, params, {'publish_frequency': 15.0}],
-        output='screen'))
+    actions.append(
+        Node(
+            package="robot_state_publisher",
+            executable="robot_state_publisher",
+            parameters=[{"use_sim_time": True}, params, {"publish_frequency": 15.0}],
+            output="screen",
+        )
+    )
 
     spawn_entity = Node(
-        package='gazebo_ros', executable='spawn_entity.py',
-        arguments=['-topic', 'robot_description', '-entity', f'tl_{arm_type_str}'],
-        output='screen')
+        package="gazebo_ros",
+        executable="spawn_entity.py",
+        arguments=["-topic", "robot_description", "-entity", f"tl_{arm_type_str}"],
+        output="screen",
+    )
     actions.append(spawn_entity)
 
     load_jsc = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller',
-             '--set-state', 'active', 'joint_state_broadcaster'],
-        output='screen')
+        cmd=[
+            "ros2",
+            "control",
+            "load_controller",
+            "--set-state",
+            "active",
+            "joint_state_broadcaster",
+        ],
+        output="screen",
+    )
     load_jpc = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller',
-             '--set-state', 'active', 'tcb_group_position_controller'],
-        output='screen')
+        cmd=[
+            "ros2",
+            "control",
+            "load_controller",
+            "--set-state",
+            "active",
+            "tcb_group_position_controller",
+        ],
+        output="screen",
+    )
 
-    actions.append(RegisterEventHandler(
-        event_handler=OnProcessExit(target_action=spawn_entity, on_exit=[load_jsc])))
-    actions.append(RegisterEventHandler(
-        event_handler=OnProcessExit(target_action=load_jsc, on_exit=[load_jpc])))
+    actions.append(
+        RegisterEventHandler(
+            event_handler=OnProcessExit(target_action=spawn_entity, on_exit=[load_jsc])
+        )
+    )
+    actions.append(
+        RegisterEventHandler(
+            event_handler=OnProcessExit(target_action=load_jsc, on_exit=[load_jpc])
+        )
+    )
 
     return actions
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            'arm_type', default_value='tcb710',
-            description='机械臂型号（7 轴），如 tcb710、tcb705'),
-        OpaqueFunction(function=_launch_actions),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "arm_type",
+                default_value="tcb710",
+                description="机械臂型号（7 轴），如 tcb710、tcb705",
+            ),
+            OpaqueFunction(function=_launch_actions),
+        ]
+    )

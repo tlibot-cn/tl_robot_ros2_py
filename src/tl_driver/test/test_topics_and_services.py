@@ -35,7 +35,7 @@ def test_service_handlers():
     assert resp.success
 
     # SetSpeed service
-    if hasattr(srvs, 'SetSpeed'):
+    if hasattr(srvs, "SetSpeed"):
         req2 = srvs.SetSpeed.Request()
         req2.speed = 1.5
         resp2 = srvs.SetSpeed.Response()
@@ -63,5 +63,6 @@ def test_topic_handlers():
 
     ok = node.handle_job_insert_movel_topic(job)
     assert ok is True
+
 
 # *** End Patch

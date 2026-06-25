@@ -21,71 +21,78 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    tl_teleop_f710_share = get_package_share_directory('tl_teleop_f710')
-    tl_gazebo_share = get_package_share_directory('tl_gazebo')
+    tl_teleop_f710_share = get_package_share_directory("tl_teleop_f710")
+    tl_gazebo_share = get_package_share_directory("tl_gazebo")
 
-    arm_type = LaunchConfiguration('arm_type')
-    joy_dev = LaunchConfiguration('joy_dev')
+    arm_type = LaunchConfiguration("arm_type")
+    joy_dev = LaunchConfiguration("joy_dev")
 
-    config_path = os.path.join(tl_teleop_f710_share, 'config', 'tl_teleop_f710_6axis_sim.yaml')
+    config_path = os.path.join(tl_teleop_f710_share, "config", "tl_teleop_f710_6axis_sim.yaml")
 
     # 通用 6 轴 Gazebo 仿真启动
-    gazebo_launch_path = PathJoinSubstitution([
-        tl_gazebo_share, 'launch',
-        'gazebo_6axis_f710_sim.launch.py',
-    ])
+    gazebo_launch_path = PathJoinSubstitution(
+        [
+            tl_gazebo_share,
+            "launch",
+            "gazebo_6axis_f710_sim.launch.py",
+        ]
+    )
 
-    return LaunchDescription([
-        DeclareLaunchArgument(
-            'arm_type',
-            default_value='tcb605',
-            description='机械臂型号，如 tcb605、tcb610、tcb705',
-        ),
-        DeclareLaunchArgument(
-            'joy_dev',
-            default_value='/dev/input/js0',
-            description='F710 手柄设备路径',
-        ),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(gazebo_launch_path),
-        ),
-        TimerAction(
-            period=3.0,
-            actions=[
-                Node(
-                    package='joy',
-                    executable='joy_node',
-                    name='joy_node',
-                    parameters=[{
-                        'dev': joy_dev,
-                        'deadzone': 0.1,
-                        'autorepeat_rate': 30.0,
-                    }],
-                ),
-            ],
-        ),
-        TimerAction(
-            period=3.0,
-            actions=[
-                Node(
-                    package='tl_teleop_f710',
-                    executable='tl_teleop_f710_node',
-                    name='tl_teleop_f710_node',
-                    output='screen',
-                    parameters=[config_path, {'arm_type': arm_type}],
-                ),
-            ],
-        ),
-        TimerAction(
-            period=3.0,
-            actions=[
-                Node(
-                    package='tl_teleop_f710',
-                    executable='tl_teleop_f710_sim_bridge',
-                    name='tl_teleop_f710_sim_bridge',
-                    output='screen',
-                    parameters=[{'arm_type': arm_type}],
-                ),
-            ],
-        ),
-    ])
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "arm_type",
+                default_value="tcb605",
+                description="机械臂型号，如 tcb605、tcb610、tcb705",
+            ),
+            DeclareLaunchArgument(
+                "joy_dev",
+                default_value="/dev/input/js0",
+                description="F710 手柄设备路径",
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(gazebo_launch_path),
+            ),
+            TimerAction(
+                period=3.0,
+                actions=[
+                    Node(
+                        package="joy",
+                        executable="joy_node",
+                        name="joy_node",
+                        parameters=[
+                            {
+                                "dev": joy_dev,
+                                "deadzone": 0.1,
+                                "autorepeat_rate": 30.0,
+                            }
+                        ],
+                    ),
+                ],
+            ),
+            TimerAction(
+                period=3.0,
+                actions=[
+                    Node(
+                        package="tl_teleop_f710",
+                        executable="tl_teleop_f710_node",
+                        name="tl_teleop_f710_node",
+                        output="screen",
+                        parameters=[config_path, {"arm_type": arm_type}],
+                    ),
+                ],
+            ),
+            TimerAction(
+                period=3.0,
+                actions=[
+                    Node(
+                        package="tl_teleop_f710",
+                        executable="tl_teleop_f710_sim_bridge",
+                        name="tl_teleop_f710_sim_bridge",
+                        output="screen",
+                        parameters=[{"arm_type": arm_type}],
+                    ),
+                ],
+            ),
+        ]
+    )
