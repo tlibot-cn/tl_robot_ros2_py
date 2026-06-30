@@ -4,7 +4,7 @@
     simulation_mode: true
 
     # ========== 控制频率 ==========
-    control_rate: 100.0              # 控制循环频率 (Hz)
+    control_rate: 100.0              # 控制循环频率 (Hz，仿真 servol 路径无需 250Hz)
 
     # ========== 机械臂型号 ==========
     arm_type: tcb605
@@ -16,8 +16,8 @@
     speed_step: 5.0                 # 十字键每按一次速度变化量
 
     # ========== 运动灵敏度 ==========
-    pos_sensitivity: 200.0           # 位置灵敏度 (mm/s，仿真可适当调低)
-    rot_sensitivity: 2.0           # 姿态灵敏度 (rad/s，仿真可适当调低)
+    pos_sensitivity: 200.0           # 位置灵敏度 (mm/s)
+    rot_sensitivity: 1.0            # 姿态灵敏度 (rad/s)
     step_size: 1.0                  # servol 插值步长 (mm，仿真用更小步长更平滑)
 
     # ========== 摇杆死区 ==========

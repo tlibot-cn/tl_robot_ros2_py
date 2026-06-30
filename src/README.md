@@ -168,12 +168,33 @@ src/
 
 ### 2.9 tl_teleop — VR 手柄遥操作
 
-通过 VR 手柄（需配合 xrobotoolkit_sdk 和 VR 设备）实现机械臂的远程遥操作控制，将手柄姿态实时映射为机械臂运动指令。
+通过 **VR 遥操作手柄**（需配合 xrobotoolkit_sdk 和 XRobotToolKit-PC-Service）远程控制天链机械臂运动。
+
+- **VR 手柄位姿跟随**：通过 `xrobotoolkit_sdk` 读取 VR 手柄位姿（位置 + 四元数），实时驱动机械臂末端运动
+- **握紧触发**：仅握紧扳机（握力 > 0.9）时触发遥操作，松开即停
+- **姿态最短路径**：四元数插值选择最短旋转路径，支持万向锁安全处理
+- **安全保护**：位置死区滤波、单步增量上限（300mm）、奇异点检测（160°自动减速至20%）、关节跳变检测（30°阈值）、硬限位裁剪
+- **6/7 轴自适应**：通过 `arm_axis_mode` 参数切换轴数，自动适配关节限位和奇异点检测逻辑
+- **100Hz 控制循环**：通过 `tl_driver` 的 ServoJ 模式实现高速位置跟随
+- **RViz 可视化**：发布 `/joint_states` 话题，可在 RViz 中实时显示遥操作指令轨迹
+
+运行时依赖 `tl_driver` 提供 ServoJ 和服务接口，依赖 `XRobotToolKit-PC-Service` 连接 VR 设备。
 
 详细说明请参考 [tl_teleop/README.md](tl_teleop/README.md)。
 
 ### 2.10 tl_teleop_f710 — F710 手柄遥操作
 
-通过罗技 F710 游戏手柄实现机械臂的遥操作控制，通过话题下发运动指令。
+通过 **Logitech F710 游戏手柄**远程控制天链机械臂运动（Python 节点）。
+
+- **真机 ServoJ 方案**：节点内部通过 `coord_transform` 服务做 IK，以 **250Hz（4ms）** 周期稳定输出关节角到 `/tl_driver/set_servoj_pos`
+- **仿真 Servol + Pinocchio IK**：仿真模式下节点发布笛卡尔位姿到 `/tl_driver/set_servol_pos`，由 `sim_bridge` 节点使用 Pinocchio 阻尼伪逆法本地求解 IK，无需 MoveIt2
+- **完整上电流程**：自动执行 `connect_arm → power_on → set_mode → set_speed → open_servoj`
+- **安全机制**：Back+Start 紧急停止、工作空间软限位、摇杆死区滤波
+- **6/7 轴自适应**：根据加载的 URDF 模型自动确定关节数量
+- **异步 IK**：有摇杆输入时后台线程调用 `coord_transform`，不阻塞主控制循环
+- **回零直接下发关节角**：按 A 键直接下发 `home_joints` 关节角度，不经过 FK→Cartesian→IK 路径
+- **14 种臂型兼容**：通过 `arm_type` 参数切换任意天链机械臂型号，仿真模式支持 `tcb605~tcb710v` 全系列
+
+配置参数位于 `config/` 下，按轴数和模式分为 4 套 YAML 文件。运行时依赖 `tl_driver` 功能包。
 
 详细说明请参考 [tl_teleop_f710/README.md](tl_teleop_f710/README.md)。
