@@ -14,6 +14,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 from std_srvs.srv import Trigger
 from tl_ros2_interface.msg import ServolMove
@@ -57,6 +58,13 @@ class F710TeleopNode(Node):
         self._init_timeout_count = 0
         self._init_timeout_max = 30
 
+        # ==================== 关节状态订阅（真机启动时保持当前位置） ====================
+        self._joint_states_received = False
+        if not self.simulation_mode_:
+            self._js_sub = self.create_subscription(
+                JointState, "/joint_states", self._init_joint_state_callback, 1
+            )
+
         # ==================== 仿真模式 FK（仅用于 target_pose_ 同步） ====================
         self._fk_ready = False
         self._fk_model = None
@@ -67,9 +75,14 @@ class F710TeleopNode(Node):
             p = self._compute_fk_home()
             if p is not None:
                 self.target_pose_ = list(p)
+            # 仿真模式：直接启动控制定时器
+            self.control_timer_ = self.create_timer(1.0 / self.control_rate_, self._control_loop)
+        else:
+            # 真机模式：控制定时器等收到 joint_states 后再启动
+            self.control_timer_ = None
+            self._init_pose_pending = True
 
         self.create_timer(1.0, self._init_servoj)
-        self.control_timer_ = self.create_timer(1.0 / self.control_rate_, self._control_loop)
         self.get_logger().info(f"F710 遥操作节点已启动 ({self.control_rate_}Hz)")
 
     def _declare_parameters(self):
@@ -326,11 +339,59 @@ class F710TeleopNode(Node):
                 self._after_init()
 
     def _after_init(self):
+        """初始化完成后获取初始 target_pose_。
+
+        如果 joint_states 已到达（_init_pose_pending=False），由 _on_init_pose 处理。
+        否则异步 FK 获取 home_joints 的位姿作为后备。
+        """
         if self.simulation_mode_:
             return
-        p = self._home_joints_to_pose()
-        if p is not None:
-            self.target_pose_ = list(p)
+        if not self._init_pose_pending:
+            return  # 已由 joint_states 初始化
+        jd = list(self.home_joints_)
+        ndof = len(jd)
+        if not self._coord_transform_client.wait_for_service(timeout_sec=0.1):
+            return  # 下次 timer tick 再试
+        req = CoordTransform.Request()
+        req.origin_coord = 0
+        req.target_coord = 1
+        req.form = 0
+        req.origin_pos = list(jd) + [0.0] * (7 - ndof)
+        req.reference_pos = [0.0] * 7
+        self._fk_future = self._coord_transform_client.call_async(req)
+        self._fk_future.add_done_callback(self._on_fk_result)
+
+    def _on_fk_result(self, future):
+        """FK 异步回调：设置 target_pose_。"""
+        try:
+            ret = future.result()
+            if ret.success and len(ret.target_pos) >= 6:
+                self.target_pose_ = list(ret.target_pos[:6])
+                self.get_logger().info(f'初始位姿（FK）: {[f"{v:.1f}" for v in self.target_pose_]}')
+            else:
+                self.get_logger().error(f"FK 失败: {ret.message}")
+        except Exception as e:
+            self.get_logger().error(f"FK 异常: {e}")
+
+    def _async_update_home_pose(self):
+        """异步更新 target_pose_ 为 home_joints 的 FK 结果。"""
+        if self.simulation_mode_:
+            p = self._compute_fk_home()
+            if p is not None:
+                self.target_pose_ = list(p)
+            return
+        if not self._coord_transform_client.wait_for_service(timeout_sec=0):
+            return
+        jd = list(self.home_joints_)
+        ndof = len(jd)
+        req = CoordTransform.Request()
+        req.origin_coord = 0
+        req.target_coord = 1
+        req.form = 0
+        req.origin_pos = list(jd) + [0.0] * (7 - ndof)
+        req.reference_pos = [0.0] * 7
+        fut = self._coord_transform_client.call_async(req)
+        fut.add_done_callback(self._on_fk_result)
 
     def _close_servoj(self):
         if self._init_state < 5:
@@ -340,6 +401,58 @@ class F710TeleopNode(Node):
             self.get_logger().info("ServoJ 已关闭")
         except Exception:
             pass
+        # 切回示教模式并下电
+        try:
+            req = SetCurrentMode.Request()
+            req.mode = 0
+            self._set_mode_client.call_async(req)
+            self._power_on_client.call_async(Trigger.Request())
+            self.get_logger().info("已切回示教模式并下电")
+        except Exception:
+            pass
+
+    def _init_joint_state_callback(self, msg):
+        """收到第一帧关节状态后用当前位置初始化，不移动到零位。"""
+        if self._init_pose_pending and not self.simulation_mode_:
+            positions = {}
+            for i, name in enumerate(msg.name):
+                if name.startswith("joint"):
+                    positions[name] = msg.position[i]
+            ndof = len(self.home_joints_)
+            if len(positions) >= ndof:
+                joint_names = [f"joint{i+1}" for i in range(ndof)]
+                current_joints = [math.degrees(positions[n]) for n in joint_names]  # rad→度
+                self._last_joint_cmd = current_joints
+                self.get_logger().info(f"当前位置: {[f'{v:.1f}' for v in current_joints]}")
+                # 异步 FK 获取当前笛卡尔位姿
+                if self._coord_transform_client.wait_for_service(timeout_sec=0):
+                    req = CoordTransform.Request()
+                    req.origin_coord = 0
+                    req.target_coord = 1
+                    req.form = 0
+                    req.origin_pos = current_joints + [0.0] * (7 - ndof)
+                    req.reference_pos = [0.0] * 7
+                    fut = self._coord_transform_client.call_async(req)
+                    fut.add_done_callback(self._on_init_pose)
+                self._init_pose_pending = False
+                # 启动控制定时器
+                self.control_timer_ = self.create_timer(
+                    1.0 / self.control_rate_, self._control_loop
+                )
+                # 取消订阅，只收第一帧
+                self.destroy_subscription(self._js_sub)
+
+    def _on_init_pose(self, future):
+        """初始位姿 FK 回调。"""
+        try:
+            ret = future.result()
+            if ret.success and len(ret.target_pos) >= 6:
+                self.target_pose_ = list(ret.target_pos[:6])
+                self.get_logger().info(f'初始位姿: {[f"{v:.1f}" for v in self.target_pose_]}')
+            else:
+                self.get_logger().error(f"初始 FK 失败: {ret.message}")
+        except Exception as e:
+            self.get_logger().error(f"初始 FK 异常: {e}")
 
     def _joy_callback(self, msg):
         self._latest_joy = msg
@@ -390,10 +503,8 @@ class F710TeleopNode(Node):
             with self._joint_cmd_lock:
                 self._last_joint_cmd = list(self.home_joints_)
             self.speed_value_ = self.speed_default_
-            # 同步更新 target_pose_，使后续摇杆增量从正确起点计算
-            new_pose = self._home_joints_to_pose()
-            if new_pose is not None:
-                self.target_pose_ = list(new_pose)
+            # 异步 FK 更新 target_pose_，不阻塞控制循环
+            self._async_update_home_pose()
             if self.simulation_mode_:
                 self._publish_servol()
             else:
