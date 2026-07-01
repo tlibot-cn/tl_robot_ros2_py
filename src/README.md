@@ -189,7 +189,7 @@ src/
 - **真机 ServoJ 方案**：节点内部通过 `coord_transform` 服务做 IK，以 **250Hz（4ms）** 周期稳定输出关节角到 `/tl_driver/set_servoj_pos`
 - **仿真 Servol + Pinocchio IK**：仿真模式下节点发布笛卡尔位姿到 `/tl_driver/set_servol_pos`，由 `sim_bridge` 节点使用 Pinocchio 阻尼伪逆法本地求解 IK，无需 MoveIt2
 - **完整上电流程**：自动执行 `connect_arm → power_on → set_mode → set_speed → open_servoj`
-- **安全机制**：Back+Start 紧急停止、工作空间软限位、摇杆死区滤波
+- **安全机制**：Back+Start toggle 停止/恢复（需摇杆归零）、摇杆死区滤波
 - **6/7 轴自适应**：根据加载的 URDF 模型自动确定关节数量
 - **异步 IK**：有摇杆输入时后台线程调用 `coord_transform`，不阻塞主控制循环
 - **回零直接下发关节角**：按 A 键直接下发 `home_joints` 关节角度，不经过 FK→Cartesian→IK 路径
