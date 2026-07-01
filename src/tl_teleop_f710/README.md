@@ -30,8 +30,7 @@
 - **多种臂型兼容**：通过 `arm_type` 参数可切换任意天链机械臂型号（14 种）
 - **速度实时调节**：十字键上下实时调整运动速度（0-100），支持 LB/RB 切换姿态控制模式（偏航/翻滚/俯仰）
 - **摇杆死区滤波**：默认 0.15 死区阈值
-- **工作空间软限位**：`workspace_limits` 参数对 X/Y/Z 进行裁剪保护
-- **紧急停止**：Back+Start 同时按下触发紧急停止，再次按下解除
+- **紧急停止**：Back+Start 同时按下停止运动，保持当前位置不动
 - **6 步 ServoJ 初始化**：connect_arm → power_on → set_mode → set_speed → open_servoj → 就绪
 
 ### 1.2 系统依赖关系
@@ -177,8 +176,7 @@ ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb70
 | **十字键上** | 加速 | 增大运动速度 |
 | **十字键下** | 减速 | 减小运动速度 |
 | **A 键** | 回零 | 直接下发 `home_joints` 关节角度，不经 FK→Cartesian→IK |
-| **B 键** | 停止 | 停止当前运动 |
-| **Back+Start** | 紧急停止 | 同时按下触发/解除紧急停止，触发时发送关节零位 |
+| **Back+Start** | 停止/恢复 | 按下停止运动（保持当前位置），再次按下恢复（需摇杆归零） |
 | **START 键** | 开始 | 开始手柄控制 |
 
 ### 2.6 配置参数说明
@@ -240,7 +238,6 @@ ros2 launch tl_teleop_f710 tl_teleop_f710_7axis_gazebo.launch.py arm_type:=tcb70
 | `rot_sensitivity` | 1.0 | 2.0 | 1.0 | 2.0 | 姿态灵敏度 (rad/s) |
 | `deadzone` | 0.15 | 0.15 | 0.15 | 0.15 | 摇杆死区 |
 | `home_joints` | 6 个零值 | 6 个零值 | 7 个零值 | 7 个零值 | 回零关节角度（度） |
-| `workspace_limits` | [-500,500,-500,500,0,800] | 同上 | 同上 | 同上 | 软限位 [x_min,x_max,y_min,y_max,z_min,z_max] |
 | `servo_speed` | 25.0 | — | 25.0 | — | ServoJ 运动速度（仅真机） |
 | `servo_vmax` | **300.0** | — | **300.0** | — | ServoJ 各轴最大速度 (°/s) |
 | `servo_amax` | 3000.0 | — | 3000.0 | — | ServoJ 各轴最大加速度 (°/s²) |
@@ -378,4 +375,4 @@ F710 手柄 → joy_node → /joy → tl_teleop_f710_node
 5. 长距离移动时建议使用较大 `step_size` 以提高响应
 6. 真机与仿真参数独立配置在各自的 YAML 文件中，互不干扰
 7. 仿真模式通过 `arm_type` 参数自动匹配对应 URDF 模型和关节数量（6/7 轴）
-8. Back+Start 同时按下可触发/解除紧急停止，触发时机械臂回到关节零位
+8. Back+Start 同时按下可停止/恢复机械臂运动，恢复时需摇杆归零

@@ -38,8 +38,6 @@
     # ========== F710 按键映射 (DirectInput 模式) ==========
     btn_x: 0                        # X 键
     btn_a: 1                        # A 键
-    btn_b: 2                        # B 键
-    btn_y: 3                        # Y 键
     btn_lb: 4                       # LB 键
     btn_rb: 5                       # RB 键
     btn_lt: 6                       # LT 键 

@@ -37,8 +37,6 @@
     # ========== F710 按键映射 ==========
     btn_x: 0
     btn_a: 1
-    btn_b: 2
-    btn_y: 3
     btn_lb: 4
     btn_rb: 5
     btn_lt: 6

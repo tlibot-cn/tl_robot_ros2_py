@@ -28,11 +28,11 @@ class F710TeleopNode(Node):
         self._latest_joy = None
         self._last_dpad_time = 0.0
         self._last_a_press = 0.0
-        self._last_b_press = 0.0
         self._last_emergency_time = 0.0
         self.speed_value_ = self.speed_default_
         self.target_pose_ = None
         self._stop_mode = False
+        self._prev_back_start = 0
         ndof = len(self.home_joints_)
         self._last_joint_cmd = list(self.home_joints_)
         self._joint_cmd_lock = threading.Lock()
@@ -54,6 +54,8 @@ class F710TeleopNode(Node):
         )
         self._init_state = 0
         self._init_future = None
+        self._init_timeout_count = 0
+        self._init_timeout_max = 30
 
         # ==================== 仿真模式 FK（仅用于 target_pose_ 同步） ====================
         self._fk_ready = False
@@ -86,7 +88,6 @@ class F710TeleopNode(Node):
         self.declare_parameter("deadzone", 0.15)
         self.declare_parameter("arm_type", "tcb605")
         self.declare_parameter("home_joints", [0.0] * 6)
-        self.declare_parameter("workspace_limits", [-500, 500, -500, 500, 0, 800])
         self.declare_parameter("axis_left_x", 0)
         self.declare_parameter("axis_left_y", 1)
         self.declare_parameter("axis_right_x", 3)
@@ -94,7 +95,6 @@ class F710TeleopNode(Node):
         self.declare_parameter("axis_dpad_x", 6)
         self.declare_parameter("axis_dpad_y", 7)
         self.declare_parameter("btn_a", 1)
-        self.declare_parameter("btn_b", 2)
         self.declare_parameter("btn_lb", 4)
         self.declare_parameter("btn_rb", 5)
         self.declare_parameter("btn_back", 8)
@@ -117,7 +117,6 @@ class F710TeleopNode(Node):
         self.deadzone_ = p("deadzone").value
         self.home_joints_ = list(p("home_joints").value)
         self.arm_type_ = p("arm_type").value
-        self.workspace_limits_ = list(p("workspace_limits").value)
         self.axis_left_x_ = int(p("axis_left_x").value)
         self.axis_left_y_ = int(p("axis_left_y").value)
         self.axis_right_x_ = int(p("axis_right_x").value)
@@ -125,7 +124,6 @@ class F710TeleopNode(Node):
         self.axis_dpad_x_ = int(p("axis_dpad_x").value)
         self.axis_dpad_y_ = int(p("axis_dpad_y").value)
         self.btn_a_ = int(p("btn_a").value)
-        self.btn_b_ = int(p("btn_b").value)
         self.btn_lb_ = int(p("btn_lb").value)
         self.btn_rb_ = int(p("btn_rb").value)
         self.btn_back_ = int(p("btn_back").value)
@@ -136,13 +134,6 @@ class F710TeleopNode(Node):
         if abs(value) < deadzone:
             return 0.0
         return (abs(value) - deadzone) / (1.0 - deadzone) * (1.0 if value > 0 else -1.0)
-
-    def _apply_workspace_limits(self, pose):
-        lo = self.workspace_limits_
-        pose[0] = max(lo[0], min(lo[1], pose[0]))
-        pose[1] = max(lo[2], min(lo[3], pose[1]))
-        pose[2] = max(lo[4], min(lo[5], pose[2]))
-        return pose
 
     def _publish_servoj(self):
         with self._joint_cmd_lock:
@@ -192,16 +183,25 @@ class F710TeleopNode(Node):
             self.get_logger().warning(f"FK 初始化失败: {e}")
 
     def _compute_fk_home(self):
-        """仿真模式：用 Pinocchio 计算 home_joints 对应的笛卡尔位姿。"""
         if not self._fk_ready:
             return None
         import pinocchio
         import numpy as np, math
 
         joints_deg = list(self.home_joints_)
+        ndof = self._fk_model.nq
+        if len(joints_deg) != ndof:
+            self.get_logger().warning(
+                f"home_joints 维度 ({len(joints_deg)}) 与模型维度 ({ndof}) 不匹配"
+            )
+            return None
         q = np.array([math.radians(v) for v in joints_deg], dtype=np.float64)
-        pinocchio.forwardKinematics(self._fk_model, self._fk_data, q)
-        pinocchio.updateFramePlacements(self._fk_model, self._fk_data)
+        try:
+            pinocchio.forwardKinematics(self._fk_model, self._fk_data, q)
+            pinocchio.updateFramePlacements(self._fk_model, self._fk_data)
+        except Exception as e:
+            self.get_logger().warning(f"FK 计算失败: {e}")
+            return None
         placement = self._fk_data.oMf[self._fk_tip_frame]
         x = placement.translation[0] * 1000.0
         y = placement.translation[1] * 1000.0
@@ -242,7 +242,7 @@ class F710TeleopNode(Node):
         req.origin_coord = 1
         req.target_coord = 0
         req.form = 0
-        req.origin_pos = list(target_pose) + [0.0] * (7 - 6)
+        req.origin_pos = list(target_pose) + [0.0] * (7 - len(target_pose))
         req.reference_pos = [0.0] * 7
         try:
             ret = self._coord_transform_client.call(req)
@@ -260,6 +260,8 @@ class F710TeleopNode(Node):
         if self.simulation_mode_:
             self._init_state = 6
             return
+        if self._stop_mode:
+            return
         s = self._init_state
         if s == 6:
             return
@@ -276,64 +278,52 @@ class F710TeleopNode(Node):
             self.get_logger().info("ServoJ 初始化中...")
             self._init_future = self._connect_client.call_async(Trigger.Request())
             self._init_state = 1
-        elif s == 1:
+            self._init_timeout_count = 0
+        elif s in (1, 2, 3, 4, 5):
             if not self._init_future.done():
+                self._init_timeout_count += 1
+                if self._init_timeout_count > self._init_timeout_max:
+                    self.get_logger().error(f"ServoJ 初始化步骤 {s} 超时，将重试...")
+                    self._init_state = 0
+                    self._init_future = None
+                    self._init_timeout_count = 0
                 return
+            self._init_timeout_count = 0
+            step_names = {1: "连接", 2: "上电", 3: "设置模式", 4: "设置速度", 5: "开启 ServoJ"}
             if not self._init_future.result().success:
-                self.get_logger().error(f"连接失败: {self._init_future.result().message}")
+                self.get_logger().error(
+                    f"{step_names[s]}失败: {self._init_future.result().message}"
+                )
                 self._init_state = 6
                 return
-            self.get_logger().info("机械臂已连接")
-            self._init_future = self._power_on_client.call_async(Trigger.Request())
-            self._init_state = 2
-        elif s == 2:
-            if not self._init_future.done():
-                return
-            if not self._init_future.result().success:
-                self.get_logger().error(f"上电失败: {self._init_future.result().message}")
+            if s == 1:
+                self.get_logger().info("机械臂已连接")
+                self._init_future = self._power_on_client.call_async(Trigger.Request())
+                self._init_state = 2
+            elif s == 2:
+                self.get_logger().info("机械臂已上电")
+                req = SetCurrentMode.Request()
+                req.mode = 2
+                self._init_future = self._set_mode_client.call_async(req)
+                self._init_state = 3
+            elif s == 3:
+                self.get_logger().info("模式已设为远程(2)")
+                req = SetSpeed.Request()
+                req.speed = self.servo_speed_
+                self._init_future = self._set_speed_client.call_async(req)
+                self._init_state = 4
+            elif s == 4:
+                self.get_logger().info(f"速度已设为 {self.servo_speed_}")
+                req = OpenServoJ.Request()
+                req.vmax = [self.servo_vmax_] * 7
+                req.amax = [self.servo_amax_] * 7
+                req.jmax = [self.servo_jmax_] * 7
+                self._init_future = self._open_servoj_client.call_async(req)
+                self._init_state = 5
+            elif s == 5:
+                self.get_logger().info("ServoJ 已开启 ✅")
                 self._init_state = 6
-                return
-            self.get_logger().info("机械臂已上电")
-            req = SetCurrentMode.Request()
-            req.mode = 2
-            self._init_future = self._set_mode_client.call_async(req)
-            self._init_state = 3
-        elif s == 3:
-            if not self._init_future.done():
-                return
-            if not self._init_future.result().success:
-                self.get_logger().error(f"设置模式失败: {self._init_future.result().message}")
-                self._init_state = 6
-                return
-            self.get_logger().info("模式已设为远程(2)")
-            req = SetSpeed.Request()
-            req.speed = self.servo_speed_
-            self._init_future = self._set_speed_client.call_async(req)
-            self._init_state = 4
-        elif s == 4:
-            if not self._init_future.done():
-                return
-            if not self._init_future.result().success:
-                self.get_logger().error(f"设置速度失败: {self._init_future.result().message}")
-                self._init_state = 6
-                return
-            self.get_logger().info(f"速度已设为 {self.servo_speed_}")
-            req = OpenServoJ.Request()
-            req.vmax = [self.servo_vmax_] * 7
-            req.amax = [self.servo_amax_] * 7
-            req.jmax = [self.servo_jmax_] * 7
-            self._init_future = self._open_servoj_client.call_async(req)
-            self._init_state = 5
-        elif s == 5:
-            if not self._init_future.done():
-                return
-            if not self._init_future.result().success:
-                self.get_logger().error(f"开启 ServoJ 失败: {self._init_future.result().message}")
-                self._init_state = 6
-                return
-            self.get_logger().info("ServoJ 已开启 ✅")
-            self._init_state = 6
-            self._after_init()
+                self._after_init()
 
     def _after_init(self):
         if self.simulation_mode_:
@@ -360,17 +350,26 @@ class F710TeleopNode(Node):
             now = time.time()
             back = joy.buttons[self.btn_back_] if self.btn_back_ < len(joy.buttons) else 0
             start = joy.buttons[self.btn_start_] if self.btn_start_ < len(joy.buttons) else 0
-            if back == 1 and start == 1 and (now - self._last_emergency_time) > 0.5:
-                self._last_emergency_time = now
-                self._stop_mode = not self._stop_mode
-                self.get_logger().warn(f"紧急停止 {'启用' if self._stop_mode else '解除'}")
+            bs_pressed = 1 if (back == 1 and start == 1) else 0
+            if bs_pressed == 1 and self._prev_back_start == 0:
                 if self._stop_mode:
-                    with self._joint_cmd_lock:
-                        self._last_joint_cmd = list(self.home_joints_)
-                    self._publish_servoj()
-                    return
+                    lx = self._apply_deadzone(joy.axes[self.axis_left_x_], self.deadzone_)
+                    ly = self._apply_deadzone(joy.axes[self.axis_left_y_], self.deadzone_)
+                    rx = self._apply_deadzone(joy.axes[self.axis_right_x_], self.deadzone_)
+                    ry = self._apply_deadzone(joy.axes[self.axis_right_y_], self.deadzone_)
+                    if any(abs(v) > 0.001 for v in (lx, ly, rx, ry)):
+                        self.get_logger().warn("恢复失败：请先将摇杆归零")
+                    else:
+                        self._stop_mode = False
+                        self.get_logger().warn("Back+Start 按下，恢复手柄控制")
+                else:
+                    self._stop_mode = True
+                    self.get_logger().warn("Back+Start 按下，机械臂停止运动（保持当前位置）")
+                self._last_emergency_time = now
+            self._prev_back_start = bs_pressed
         if self._stop_mode:
-            self._publish_servoj()
+            if not self.simulation_mode_:
+                self._publish_servoj()
             return
         if joy is None:
             # 真机模式：保持 250Hz servoj 流不间断
@@ -378,9 +377,7 @@ class F710TeleopNode(Node):
                 self._publish_servoj()
             return
         na = max(self.axis_left_x_, self.axis_left_y_, self.axis_right_x_, self.axis_right_y_)
-        nb = max(
-            self.btn_a_, self.btn_b_, self.btn_lb_, self.btn_rb_, self.btn_back_, self.btn_start_
-        )
+        nb = max(self.btn_a_, self.btn_lb_, self.btn_rb_, self.btn_back_, self.btn_start_)
         if len(joy.axes) <= na or len(joy.buttons) <= nb:
             if not self.simulation_mode_:
                 self._publish_servoj()
@@ -397,14 +394,11 @@ class F710TeleopNode(Node):
             new_pose = self._home_joints_to_pose()
             if new_pose is not None:
                 self.target_pose_ = list(new_pose)
-            self._publish_servoj()
             if self.simulation_mode_:
+                self._publish_servol()
+            else:
                 self._publish_servoj()
             self.get_logger().info("回零")
-        if joy.buttons[self.btn_b_] == 1 and (now - self._last_b_press) > 0.5:
-            self._last_b_press = now
-            self._publish_servoj()
-            return
         if hd and dy != 0.0 and (now - self._last_dpad_time) > 0.3:
             self.speed_value_ = max(
                 self.speed_min_,
@@ -444,7 +438,6 @@ class F710TeleopNode(Node):
             self.target_pose_[3] += roll
             self.target_pose_[4] += pitch
             self.target_pose_[5] += dr
-            self.target_pose_ = self._apply_workspace_limits(self.target_pose_)
             if not self.simulation_mode_:
                 if not self._ik_pending:
                     self._ik_pending = True
