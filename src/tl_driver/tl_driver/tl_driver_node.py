@@ -668,7 +668,8 @@ class TLArmNode(Node):
         # Mirror the C++ connect() behavior: connect both primary and auxiliary ports,
         # require positive socket fds, register callbacks, and mark connected.
         self.get_logger().info("connect() called")
-        self.get_logger().info(f"tl_interface file = {tl_interface.__file__}")
+        if tl_interface is not None:
+            self.get_logger().info(f"tl_interface file = {tl_interface.__file__}")
 
         if self.is_connected_:
             self.get_logger().info("[Connect]: arm already connected")
@@ -803,7 +804,10 @@ class TLArmNode(Node):
             return False
 
     def _startup_connect(self):
-        # Simplified startup connect: attempt connect and power_on once.
+        """启动连接与上电时序，参考 C++ TL_Arm::init() 实现。
+
+        时序：connect → 设置示教模式 → 清除错误 → 下电释放控制器 → 上电 → 延时2s
+        """
         try:
             ip = self.get_parameter("arm_ip").get_parameter_value().string_value
             port = self.get_parameter("arm_port").get_parameter_value().string_value
@@ -817,66 +821,100 @@ class TLArmNode(Node):
             self.get_logger().info(
                 f"[Connect]: successfully connected to arm at {ip}:{port},{port_aux}"
             )
+
+            # 切换到示教模式
             try:
-                self.power_on()
-            except Exception:
-                pass
+                ret = tl_interface.set_current_mode(self.fd, 0)
+                if ret != 0:
+                    self.get_logger().error(f"[Init]: failed to set teach mode, result={ret}")
+                else:
+                    self.get_logger().info("[Init]: set teach mode success")
+            except Exception as e:
+                self.get_logger().warning(f"[Init]: set_current_mode exception: {e}")
+
+            # 清除控制器错误和报警
+            try:
+                ret = tl_interface.clear_error(self.fd)
+                if ret != 0:
+                    self.get_logger().warn(f"[Init]: clear_error result={ret}")
+                else:
+                    self.get_logger().info("[Init]: clear_error success")
+            except Exception as e:
+                self.get_logger().warning(f"[Init]: clear_error exception: {e}")
+
+            # 清错后下电，释放控制器占用状态
+            try:
+                if not self.power_off():
+                    self.get_logger().warning("[Init]: power_off returned false, continuing...")
+            except Exception as e:
+                self.get_logger().warning(f"[Init]: power_off exception: {e}")
+
+            # 上电
+            power_ok = False
+            try:
+                power_ok = self.power_on()
+            except Exception as e:
+                self.get_logger().warning(f"[Init]: power_on exception: {e}")
+
+            if not power_ok:
+                self.get_logger().error("[Init]: 上电失败，跳过上电延时")
+                return
+
+            # 上电后延时，等待伺服状态稳定
+            self.get_logger().info("[Init]: 上电延时2s...")
+            time.sleep(2)
+            self.get_logger().info("[Init]: 上电延时完成")
 
     def power_on(self) -> bool:
-        """Power on sequence mirroring C++ TL_Arm::power_on().
+        """上电时序，对齐 C++ TL_Arm::power_on() 行为。
+
+        状态约定：
+          0 — 停止（stop）
+          1 — 就绪（ready）
+          2 — 报警（alarm，无法上电）
+          3 — 运行中（running，已上电）
 
         Returns True on success (servo_state == 3), False otherwise.
         """
-        self.get_logger().info("power_on() called")
         if tl_interface is None or self.fd is None:
-            self.get_logger().warning("power_on: tl_interface or fd missing")
+            self.get_logger().warning("[PowerOn]: tl_interface or fd missing")
             return False
 
-        ret, state = tl_interface.get_servo_state(self.fd, -1)
-        self.get_logger().info(f"get_servo_state ret={ret}, state={state}")
-        if ret != 0:
-            self.get_logger().error(f"get_servo_state failed ret={ret}")
-            return False
         try:
-            if state == 0:
-                self.get_logger().info("before set_servo_state")
-                ret = tl_interface.set_servo_state(self.fd, 1)
-                self.get_logger().info(f"after set_servo_state ret={ret}")
+            # 先查询当前伺服状态
+            ret, state = tl_interface.get_servo_state(self.fd, -1)
 
-                self.get_logger().info("before set_servo_poweron")
-                ret = tl_interface.set_servo_poweron(self.fd)
-                self.get_logger().info(f"after set_servo_poweron ret={ret}")
-            elif state == 1:
-                self.get_logger().info("before set_servo_poweron")
-                ret = tl_interface.set_servo_poweron(self.fd)
-                self.get_logger().info(f"after set_servo_poweron ret={ret}")
-            elif state == 2:
-                self.get_logger().info("before clear_error")
-                ret = tl_interface.clear_error(self.fd)
-                self.get_logger().info(f"after clear_error ret={ret}")
-
-                self.get_logger().info("before set_servo_state")
-                ret = tl_interface.set_servo_state(self.fd, 1)
-                self.get_logger().info(f"after set_servo_state ret={ret}")
-
-                self.get_logger().info("before set_servo_poweron")
-                ret = tl_interface.set_servo_poweron(self.fd)
-                self.get_logger().info(f"after set_servo_poweron ret={ret}")
-            elif state == 3:
-                self.get_logger().info("[PowerOn]: already power on")
+            # 已上电，无需操作
+            if state == 3:
                 self.is_powered_ = True
+                self.get_logger().info("[PowerOn]: already power on")
                 return True
+
+            # 报警状态 — 直接返回 false，不清错上电
+            if state == 2:
+                self.get_logger().error("[PowerOn]: servo alarm state (2), cannot power on")
+                return False
+
+            # 其他状态（0 或 1）→ 手动处理状态转换（NRC API 无 power_on 封装）
+            if state == 0:
+                tl_interface.set_servo_state(self.fd, 1)  # 停止 → 就绪
+
+            tl_interface.set_servo_poweron(self.fd)
+
+            # 验证最终状态
+            ret, state = tl_interface.get_servo_state(self.fd, -1)
+
+            if state == 3:
+                self.is_powered_ = True
+                self.get_logger().info(f"[PowerOn]: successfully power on, servo_state = {state}")
+                return True
+            else:
+                self.get_logger().error(f"[PowerOn]: failed to power on, servo_state = {state}")
+                return False
+
         except Exception as e:
-            self.get_logger().warning(f"power_on sequence failed: {e}")
-
-        ret, state = tl_interface.get_servo_state(self.fd, -1)
-        if ret == 0 and state == 3:
-            self.is_powered_ = True
-            self.get_logger().info(f"[PowerOn]: successfully power on, " f"servo_state = {state}")
-            return True
-
-        self.get_logger().info(f"[PowerOn]: failed to power on, " f"servo_state = {state}")
-        return False
+            self.get_logger().warning(f"[PowerOn]: power_on sequence failed: {e}")
+            return False
 
     def power_off(self) -> bool:
         """Power off sequence mirroring C++ TL_Arm::power_off()."""
