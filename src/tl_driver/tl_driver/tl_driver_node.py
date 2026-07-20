@@ -863,7 +863,7 @@ class TLArmNode(Node):
             self.get_logger().info("[Init]: 上电延时完成")
 
     def power_on(self) -> bool:
-        """上电时序，对齐 C++ TL_Arm::power_on() 行为。
+        """伺服上电。
 
         状态约定：
           0 — 停止（stop）
@@ -879,7 +879,7 @@ class TLArmNode(Node):
 
         try:
             # 先查询当前伺服状态
-            ret, state = tl_interface.get_servo_state(self.fd, -1)
+            state = tl_interface.get_servo_state(self.fd)
 
             # 已上电，无需操作
             if state == 3:
@@ -887,19 +887,27 @@ class TLArmNode(Node):
                 self.get_logger().info("[PowerOn]: already power on")
                 return True
 
-            # 报警状态 — 直接返回 false，不清错上电
-            if state == 2:
-                self.get_logger().error("[PowerOn]: servo alarm state (2), cannot power on")
-                return False
+            # 再查一次
+            state = tl_interface.get_servo_state(self.fd)
 
-            # 其他状态（0 或 1）→ 手动处理状态转换（NRC API 无 power_on 封装）
             if state == 0:
                 tl_interface.set_servo_state(self.fd, 1)  # 停止 → 就绪
-
-            tl_interface.set_servo_poweron(self.fd)
+                tl_interface.set_servo_poweron(self.fd)
+            elif state == 1:
+                tl_interface.set_servo_poweron(self.fd)
+            elif state == 2:
+                self.get_logger().error("[PowerOn]: servo alarm state (2), cannot power on")
+                return False
+            elif state == 3:
+                self.is_powered_ = True
+                self.get_logger().info("[PowerOn]: already power on")
+                return True
+            else:
+                self.get_logger().error(f"[PowerOn]: unknown servo state {state}")
+                return False
 
             # 验证最终状态
-            ret, state = tl_interface.get_servo_state(self.fd, -1)
+            state = tl_interface.get_servo_state(self.fd)
 
             if state == 3:
                 self.is_powered_ = True
