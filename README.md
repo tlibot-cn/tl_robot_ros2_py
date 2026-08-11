@@ -2,6 +2,14 @@
 
 TL 系列机械臂 ROS2 接口与功能包集 — 四川天链机器人股份有限公司
 
+# 此仓库已归档
+
+本项目已合并/迁移至主仓库 [tlibot-cn/tl_robot_ros2](https://github.com/tlibot-cn/tl_robot_ros2)。
+
+请访问新仓库以获取最新的开发动态、提交问题或贡献代码。
+
+感谢您的关注与支持！
+
 ## 环境要求
 
 - Ubuntu 22.04
